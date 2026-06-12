@@ -1,0 +1,29 @@
+# Abhängigkeiten
+node_modules/
+
+# Build-Ausgabe
+dist/
+dist-ssr/
+
+# Umgebungsvariablen (NIEMALS committen!)
+.env
+.env.local
+.env.*.local
+
+# Test-Artefakte
+bundle.tmp.js
+coverage/
+
+# Lokale Claude-Code-Einstellungen (Maschinen-spezifisch)
+.claude/settings.local.json
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/settings.json
+
+# Supabase local dev
+supabase/.branches/
+supabase/.temp/

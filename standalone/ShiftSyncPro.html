@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<title>ShiftSync Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>html,body,#root{margin:0;padding:0;min-height:100%;}body{background:#f0f0ed;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+if (typeof window.storage === "undefined") {
+  try {
+    const ls = window.localStorage; ls.setItem("__t","1"); ls.removeItem("__t");
+    window.storage = {
+      get: async k => { const v = ls.getItem(k); return v==null ? null : { value:v }; },
+      set: async (k,v) => { ls.setItem(k,v); return {key:k,value:v}; },
+      delete: async k => { ls.removeItem(k); return {key:k,deleted:true}; },
+      list: async () => ({ keys: Object.keys(ls) }),
+    };
+  } catch(e) {
+    const mem = {};
+    window.storage = {
+      get: async k => (k in mem ? { value:mem[k] } : null),
+      set: async (k,v) => { mem[k]=v; return {key:k,value:v}; },
+      delete: async k => { delete mem[k]; return {key:k,deleted:true}; },
+      list: async () => ({ keys: Object.keys(mem) }),
+    };
+  }
+}
+const SUPER_ADMIN_PW = "supersecret";
+const SH = {
+  "-":{l:"Frei",bg:"#f1f5f9",bgD:"#1e293b",c:"#94a3b8",cD:"#64748b",x:"#94a3b8"},
+  U:{l:"Urlaub",bg:"#fef3c7",bgD:"#78350f",c:"#92400e",cD:"#fcd34d",x:"#f59e0b"},
+  K:{l:"Krank",bg:"#fee2e2",bgD:"#7f1d1d",c:"#dc2626",cD:"#fca5a5",x:"#ef4444"},
+};
+// Schicht-Farben werden bei Bedarf dynamisch generiert
+const SHIFT_COLORS=[
+  {bg:"#dcfce7",bgD:"#14532d",c:"#15803d",cD:"#86efac",x:"#22c55e"},
+  {bg:"#dbeafe",bgD:"#1e3a5f",c:"#2563eb",cD:"#93c5fd",x:"#3b82f6"},
+  {bg:"#ede9fe",bgD:"#3b2764",c:"#7c3aed",cD:"#c4b5fd",x:"#8b5cf6"},
+  {bg:"#fce7f3",bgD:"#831843",c:"#be185d",cD:"#f9a8d4",x:"#ec4899"},
+  {bg:"#cffafe",bgD:"#164e63",c:"#0e7490",cD:"#67e8f9",x:"#06b6d4"},
+];
+
+const ROLES = {
+  owner:    {l:"Inhaber",      ic:"", col:"#4f46e5", rank:4},
+  director: {l:"Geschäftsführer",ic:"", col:"#0c7a4e", rank:3},
+  manager:  {l:"Shopleiter",   ic:"", col:"#c4373a", rank:2},
+  staff:    {l:"Mitarbeiter",  ic:"", col:"#74746d", rank:1},
+};
+// White-Label: kuratierte Akzentfarben pro Betrieb (alle auf Hell & Dunkel lesbar)
+const ACCENTS=["#4f46e5","#0d9488","#0284c7","#ea580c","#7c3aed","#e11d48"];
+
+// Abo-Stufen (Preise sind Vorschläge – frei anpassbar)
+const PLANS={
+  free:    {l:"Free",     maxEmps:5,        auto:false, exportF:false, whitelabel:false, price:"0 € (bis 5 MA)",  order:0},
+  trial:   {l:"Test",     maxEmps:15,       auto:true,  exportF:true,  whitelabel:false, price:"14 Tage gratis", order:1},
+  starter: {l:"Starter",  maxEmps:10,       auto:false, exportF:false, whitelabel:false, price:"19 €/Monat",     order:2},
+  pro:     {l:"Pro",      maxEmps:30,       auto:true,  exportF:true,  whitelabel:false, price:"49 €/Monat",     order:3},
+  business:{l:"Business", maxEmps:Infinity, auto:true,  exportF:true,  whitelabel:true,  price:"99 €/Monat",     order:4},
+};
+// Betrieb-Status im Lebenszyklus
+const STATUS={
+  active:   {l:"Aktiv",     col:"#0c7a4e"},
+  trial:    {l:"Testphase", col:"#0284c7"},
+  archived: {l:"Offline",   col:"#946315"},
+  suspended:{l:"Gesperrt",  col:"#c4373a"},
+};
+
+const PERMS = {
+  createPlan: "Dienstpläne erstellen/bearbeiten",
+  approveVac: "Urlaubsanträge entscheiden",
+  approveSick: "Krankmeldungen entscheiden",
+  approveSwap: "Schichttausch entscheiden",
+  manageStaff: "Mitarbeiter anlegen/bearbeiten",
+  resetPins: "PINs zurücksetzen",
+  manageShifts: "Schichtmodelle ändern",
+  manageOrg: "Betriebseinstellungen ändern",
+};
+
+// Default-Berechtigungen pro Rolle
+const DEFAULT_PERMS = {
+  owner:    Object.fromEntries(Object.keys(PERMS).map(k=>[k,true])),
+  director: {createPlan:true,approveVac:true,approveSick:true,approveSwap:true,manageStaff:true,resetPins:true,manageShifts:false,manageOrg:false},
+  manager:  {createPlan:true,approveVac:false,approveSick:true,approveSwap:true,manageStaff:false,resetPins:false,manageShifts:false,manageOrg:false},
+  staff:    Object.fromEntries(Object.keys(PERMS).map(k=>[k,false])),
+};
+
+const DEFAULT_SHIFTS = [
+  {key:"F",label:"Früh",start:"06:00",end:"14:00",required:2,colorIdx:0},
+  {key:"S",label:"Spät",start:"14:00",end:"22:00",required:2,colorIdx:1},
+  {key:"N",label:"Nacht",start:"22:00",end:"06:00",required:1,colorIdx:2},
+];
+
+const MF=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const DW=["So","Mo","Di","Mi","Do","Fr","Sa"];
+const PR=[{v:"any",l:"Flexibel"},{v:"FS",l:"Früh oder Spät"},{v:"noN",l:"Keine Nacht"}];
+
+const rid=()=>Math.random().toString(36).slice(2,9);
+const orgCode=name=>{const s=(name||"").toLowerCase().replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss").replace(/[^a-z0-9]/g,"")||"betrieb";let h=0x811c9dc5>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}const AB="ABCDEFGHJKMNPQRSTUVWXYZ23456789";let code="",x=h;for(let i=0;i<5;i++){code+=AB[x%AB.length];x=Math.floor(x/AB.length);}return code;};
+const dim=(y,m)=>new Date(y,m+1,0).getDate();
+const tms=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+const nms=()=>{const d=new Date();d.setMonth(d.getMonth()+1);return tms(d)};
+const pm=s=>{const[y,m]=s.split("-").map(Number),m0=m-1;return{y,m0,days:dim(y,m0),lbl:`${MF[m0]} ${y}`}};
+const isoDate=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const hoursOf=(s,e)=>{const[h1,m1]=s.split(":").map(Number),[h2,m2]=e.split(":").map(Number);let d=(h2*60+m2)-(h1*60+m1);if(d<=0)d+=24*60;return d/60;};
+// ─── Compliance-Wächter: prüft einen Planentwurf gegen ArbZG-Kernregeln ───
+function arbzgCheck(sched,empList,shiftDefs){
+  const SD=Object.fromEntries(shiftDefs.map(s=>[s.key,s]));
+  const tm=t=>{const[h,m]=t.split(":").map(Number);return h*60+m;};
+  const issues=[];
+  empList.forEach(e=>{const row=sched[e.id];if(!row)return;let consec=0;
+    for(let d=0;d<row.length;d++){const def=SD[row[d]];
+      if(def){consec++;
+        let dur=tm(def.end)-tm(def.start);if(dur<=0)dur+=1440;
+        if(dur>600)issues.push({empId:e.id,name:e.name,day:d,sev:"er",msg:`Schicht ${row[d]} über 10 h (§3 ArbZG)`});
+        const pk=d>0?row[d-1]:null,prev=pk?SD[pk]:null;
+        if(prev){let endAbs=(d-1)*1440+tm(prev.end);if(tm(prev.end)<=tm(prev.start))endAbs=d*1440+tm(prev.end);
+          const rest=d*1440+tm(def.start)-endAbs;
+          if(rest>=0&&rest<660)issues.push({empId:e.id,name:e.name,day:d,sev:"er",msg:`Ruhezeit nur ${Math.floor(rest/60)} h nach ${pk}-Schicht (§5: mind. 11 h)`});}
+        if(consec===7)issues.push({empId:e.id,name:e.name,day:d,sev:"w",msg:`7. Arbeitstag in Folge – Ausgleichstag einplanen`});
+      }else consec=0;}});
+  return issues;
+}
+const relTime=t=>{const s=(Date.now()-t)/1000;if(s<60)return"gerade eben";if(s<3600)return`vor ${Math.floor(s/60)} Min`;if(s<86400)return`vor ${Math.floor(s/3600)} Std`;if(s<604800)return`vor ${Math.floor(s/86400)} Tg`;return new Date(t).toLocaleDateString("de-DE");};
+
+const db={
+  get:async k=>{try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null}catch{return null}},
+  set:async(k,v)=>{try{await window.storage.set(k,JSON.stringify(v))}catch{}}
+};
+
+function doICS(sc,nm,y,m0,shiftDefs){
+  const SD=Object.fromEntries(shiftDefs.map(s=>[s.key,s]));
+  let str="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nCALSCALE:GREGORIAN\r\n";
+  sc.forEach((sh,i)=>{const def=SD[sh];if(!def)return;const[h1,m1]=def.start.split(":"),[h2,m2]=def.end.split(":");const dd=String(i+1).padStart(2,"0"),mm=String(m0+1).padStart(2,"0"),ds=`${y}${mm}${dd}`;let de=ds;if(parseInt(h2)<parseInt(h1)){const n=new Date(y,m0,i+2);de=`${n.getFullYear()}${String(n.getMonth()+1).padStart(2,"0")}${String(n.getDate()).padStart(2,"0")}`;}str+=`BEGIN:VEVENT\r\nUID:${rid()}\r\nDTSTART:${ds}T${h1}${m1}00\r\nDTEND:${de}T${h2}${m2}00\r\nSUMMARY:${def.label}schicht\r\nEND:VEVENT\r\n`;});
+  str+="END:VCALENDAR";
+  const a=document.createElement("a");a.href=`data:text/calendar;charset=utf-8,${encodeURIComponent(str)}`;a.download=`Dienstplan_${y}_${m0+1}.ics`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
+
+// ─── ArbZG-konforme Planungslogik ────────────────────────────
+function canWork(sc,id,d,sh,shiftDefs){
+  const r=sc[id];
+  if(!r||r[d]!=="-")return false;
+  const def=shiftDefs.find(x=>x.key===sh);if(!def)return false;
+  // §5 ArbZG: 11h Ruhezeit
+  if(d>0){
+    const p=r[d-1];
+    if(p==="N"||p==="K")return false;
+    const prevDef=shiftDefs.find(x=>x.key===p);
+    if(prevDef){
+      // Vereinfacht: nach Schicht mit später Endzeit nicht früh anfangen
+      const[ph2]=prevDef.end.split(":");
+      const[ch1]=def.start.split(":");
+      if(parseInt(ph2)>=20&&parseInt(ch1)<=8)return false;
+    }
+  }
+  // §11 ArbZG: max 6 Arbeitstage in Folge, mind. 1 freier Tag pro Woche
+  let consec=0;
+  for(let i=d-1;i>=0&&r[i]!=="-"&&r[i]!=="U";i--)consec++;
+  if(consec>=6)return false;
+  return true;
+}
+
+function algo(emps,wm,absM,y,mo,shiftDefs,weekStdHours){
+  const days=dim(y,mo),sc={};
+  emps.forEach(e=>sc[e.id]=Array(days).fill("-"));
+  // Urlaub/Krank zuerst
+  emps.forEach(e=>{(absM[e.id]||[]).forEach(({day,type})=>{if(day>=1&&day<=days)sc[e.id][day-1]=type;});});
+  const ws={};emps.forEach(e=>ws[e.id]=new Set((wm[e.id]||[]).map(d=>d-1)));
+  // Pflicht: jeder MA bekommt mindestens 1 freien Tag pro 7-Tage-Block
+  // Zähle bisherige Arbeitstage des Monats pro MA
+  const monthlyTargetHours={};
+  emps.forEach(e=>{const pct=e.workPct||100;monthlyTargetHours[e.id]=(weekStdHours*pct/100)*(days/7);});
+  const workedHours={};emps.forEach(e=>workedHours[e.id]=0);
+
+  const prefScore=(e,sh)=>{if(e.pref===sh)return -2;if(e.pref==="FS"&&(sh==="F"||sh==="S"))return -1.5;if(e.pref==="noN"&&sh==="N")return 5;if(e.pref==="any")return 0;return 0.3;};
+
+  for(let d=0;d<days;d++){
+    for(const def of shiftDefs){
+      const sh=def.key,need=def.required;
+      const shHours=hoursOf(def.start,def.end);
+      let got=0;
+      // Pass 0: Wunschfrei respektiert + Soll-Deckel · Pass 1: ohne Wunschfrei + Soll-Deckel · Pass 2: Notbesetzung bis max. 110 % Soll
+      for(let pass=0;pass<3&&got<need;pass++){
+        const capF=pass<2?1.02:1.10;
+        const candidates=[...emps]
+          .filter(e=>{if(!canWork(sc,e.id,d,sh,shiftDefs))return false;if(pass===0&&ws[e.id].has(d))return false;if(workedHours[e.id]+shHours>monthlyTargetHours[e.id]*capF+0.01)return false;return true;})
+          .map(e=>{
+            const target=monthlyTargetHours[e.id];
+            const worked=workedHours[e.id];
+            const utilization=target>0?worked/target:1;
+            return{...e,score:utilization*5+prefScore(e,sh)+(Math.random()-.5)*.6};
+          })
+          .sort((a,b)=>a.score-b.score);
+        candidates.forEach(e=>{if(got<need){sc[e.id][d]=sh;workedHours[e.id]+=shHours;got++;}});
+      }
+    }
+  }
+  return sc;
+}
+
+// ─── Icon-System (Strich-Icons, currentColor) ───────────────
+const ICONS={
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user:'<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2.46l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2.47l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  building:'<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M9 6h.01M15 6h.01M12 6h.01M12 10h.01M12 14h.01M15 10h.01M15 14h.01M9 10h.01M9 14h.01"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>',
+  pencil:'<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/><path d="m15 5 4 4"/>',
+  key:'<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>',
+  trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  plus:'<path d="M5 12h14M12 5v14"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  repeat:'<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  printer:'<path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
+  chart:'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><rect x="7" y="11" width="3" height="6" rx="0.5"/><rect x="12" y="7" width="3" height="10" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/>',
+  lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  thermometer:'<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/>',
+  plane:'<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+  brush:'<path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/>',
+  list:'<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>',
+  star:'<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+  chevron:'<path d="m9 18 6-6-6-6"/>',
+  sparkle:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
+  wand:'<path d="m3 21 9-9M15 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM20 14l.6 1.2 1.4.6-1.4.6-.6 1.2-.6-1.2-1.4-.6 1.4-.6z"/>',
+};
+const Icon=({n,s=18,sw=1.8,style})=>{const d=ICONS[n];if(!d)return null;const filled=n==="star"||n==="sparkle";return <svg width={s} height={s} viewBox="0 0 24 24" fill={filled?"currentColor":"none"} stroke={filled?"none":"currentColor"} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",verticalAlign:"-0.18em",flexShrink:0,...style}} dangerouslySetInnerHTML={{__html:d}}/>;};
+
+// ─── App ─────────────────────────────────────────────────────
+function App(){
+  const[dark,setDark]=useState(false);
+  const[orgs,setOrgs]=useState([]);
+  const[cfg,setCfg]=useState({selfSignup:false});
+  const[orgId,setOrgId]=useState(null);
+  const[data,setData]=useState({emps:[],wishes:{},scheds:{},reqs:[]});
+  const[view,setView]=useState("login");
+  const[me,setMe]=useState(null);
+  const[isSuper,setIsSuper]=useState(false);
+  const[wasSuper,setWasSuper]=useState(false);
+  const[aTab,setATab]=useState("dash");
+  const[eTab,setETab]=useState("home");
+  const[msg,setMsg]=useState(null);
+  const[planView,setPlanView]=useState("month");
+  const[planDate,setPlanDate]=useState(isoDate(new Date()));
+  const[empPlanView,setEmpPlanView]=useState("month");
+  const[filterEmp,setFilterEmp]=useState("all");
+  const[filterShift,setFilterShift]=useState("all");
+  const[reqFilter,setReqFilter]=useState("pending");
+
+  // Login: 3 Felder
+  const[lOrg,setLOrg]=useState("");const[lId,setLId]=useState("");const[lPin,setLPin]=useState("");
+  const[wiz,setWiz]=useState({coName:"",coSub:"Tankstelle · 24/7",weekStdHours:40,name:"",lid:"",pin:""});
+  const[showOrgs,setShowOrgs]=useState(false);
+  const[linkForm,setLinkForm]=useState({code:"",lid:"",pin:""});
+  const[editE,setEditE]=useState(null);const[ef,setEf]=useState({});
+  const[rstE,setRstE]=useState(null);const[rstP,setRstP]=useState("");
+  const[orgEd,setOrgEd]=useState(null);
+  const[editShift,setEditShift]=useState(null);
+  const[showHoliday,setShowHoliday]=useState(false);
+  const[holidayDate,setHolidayDate]=useState("");
+  const[holidayName,setHolidayName]=useState("");
+  const[editReq,setEditReq]=useState(null);const[decNote,setDecNote]=useState("");
+  const[nef,setNef]=useState({name:"",lid:"",pin:"",pref:"any",role:"staff",workPct:100,inPlan:true});
+  const[dragSh,setDragSh]=useState(null); // {empId,day,key} beim Ziehen
+  const[showNotifs,setShowNotifs]=useState(false);
+  const[planMo,setPlanMo]=useState(nms);const[genLoad,setGenLoad]=useState(false);
+  const[editMode,setEditMode]=useState(false);const[draft,setDraft]=useState(null);const[paint,setPaint]=useState("");
+  // Wunschfrei: Monat + Tage + Notiz
+  const[wishMonth,setWishMonth]=useState(nms);const[wsel,setWsel]=useState([]);const[wishNote,setWishNote]=useState("");
+  const[rqForm,setRqForm]=useState({type:"vac",dates:[],note:"",toId:"",toDate:"",fromDate:""});
+  const[rqTab,setRqTab]=useState("new");
+  const[pinCh,setPinCh]=useState({cur:"",nw:"",cf:""});
+
+  const flash=(type,text)=>{setMsg({type,text});setTimeout(()=>setMsg(null),3400)};
+  const[vw,setVw]=useState(typeof window!=="undefined"?window.innerWidth:1024);
+  const isMobile=vw<640;
+  useEffect(()=>{const h=()=>setVw(window.innerWidth);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
+  useEffect(()=>{
+    if(document.getElementById("ss-fonts"))return;
+    const l=document.createElement("link");l.id="ss-fonts";l.rel="stylesheet";l.href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Schibsted+Grotesk:wght@500;600;700;800&display=swap";document.head.appendChild(l);
+    const st=document.createElement("style");st.id="ss-style";st.textContent=`
+      *{font-family:'Hanken Grotesk',ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;-webkit-font-smoothing:antialiased;}
+      h1,h2,h3{font-family:'Schibsted Grotesk','Hanken Grotesk',sans-serif!important;letter-spacing:-.02em;}
+      table{font-variant-numeric:tabular-nums;}
+      input,select,textarea,button{font-family:inherit;}
+      input:focus,select:focus,textarea:focus{border-color:#6366f1!important;box-shadow:0 0 0 3px rgba(99,102,241,.18);}
+      ::selection{background:rgba(99,102,241,.22);}
+      *::-webkit-scrollbar{width:11px;height:11px;}
+      *::-webkit-scrollbar-thumb{background:rgba(120,120,120,.32);border-radius:8px;border:3px solid transparent;background-clip:padding-box;}
+      *::-webkit-scrollbar-thumb:hover{background:rgba(120,120,120,.5);background-clip:padding-box;}
+    `;document.head.appendChild(st);
+  },[]);
+  useEffect(()=>{(async()=>{try{
+    const[o,d,c]=await Promise.all([db.get("orgs"),db.get("dark"),db.get("config")]);
+    if(d!==null)setDark(d);
+    if(c)setCfg(c);
+    if(o&&o.length){
+      // Migration: fehlende Betriebs-IDs, Status & Abo-Stufe nachtragen
+      let migrated=false;
+      const usedCodes=new Set(o.filter(x=>x.code).map(x=>x.code));
+      const migratedOrgs=o.map(x=>{
+        let nx={...x};
+        if(!nx.code){nx.code=orgCode(nx.name);migrated=true;}
+        if(!nx.status){nx.status="active";migrated=true;}
+        if(!nx.plan){nx.plan="pro";migrated=true;}
+        return nx;
+      });
+      if(migrated)await db.set("orgs",migratedOrgs);
+      setOrgs(migratedOrgs);
+      setView("login");
+    }else setView("login");
+  }catch{setView("login");}})();},[]);
+  useEffect(()=>{(async()=>{if(!orgId)return;const d=await db.get(`org_${orgId}`);const safe=d||{emps:[],wishes:{},scheds:{},reqs:[]};if(!Array.isArray(safe.reqs))safe.reqs=[];if(!Array.isArray(safe.emps))safe.emps=[];if(!safe.wishes)safe.wishes={};if(!safe.scheds)safe.scheds={};if(!Array.isArray(safe.notifs))safe.notifs=[];setData(safe);})();},[orgId]);
+
+  const saveOrgs=async o=>{setOrgs(o);await db.set("orgs",o)};
+  const updOrg=async(id,patch)=>{await saveOrgs(orgs.map(o=>o.id===id?{...o,...patch}:o));};
+  const saveCfg=async c=>{setCfg(c);await db.set("config",c)};
+  const saveData=async d=>{setData(d);await db.set(`org_${orgId}`,d)};
+  const togDark=async()=>{const d=!dark;setDark(d);await db.set("dark",d)};
+
+  const org=orgs.find(o=>o.id===orgId);
+  const{emps,wishes,scheds,reqs}=data;
+  const reqList=Array.isArray(reqs)?reqs:[];
+  const shiftDefs=org?.shifts||DEFAULT_SHIFTS;
+  const weekStdHours=org?.weekStdHours||40;
+  const holidays=org?.holidays||[];
+  const permsByRole=org?.perms||DEFAULT_PERMS;
+
+  const T=dark?{bg:"#0c0c0e",bg2:"#1a1a1d",bg3:"#070708",card:"#161618",bord:"#2a2a2e",bord2:"#3a3a40",tx:"#f4f4f1",tx2:"#9a9a93",inv:"#0c0c0e",invBg:"#f4f4f1",acc:"#8b87f5",accGrad:"#8b87f5",ok:"#10261c",okT:"#5fd9a0",er:"#2e1616",erT:"#f0888a",w:"#2b220e",wT:"#e8b14e",bl:"#181a33",blT:"#9aa0f7",pu:"#211a3a",puT:"#b9aef7"}:{bg:"#f0f0ed",bg2:"#e7e7e3",bg3:"#dcdcd6",card:"#ffffff",bord:"#deded8",bord2:"#cdcdc5",tx:"#1b1b19",tx2:"#6f6f68",inv:"#ffffff",invBg:"#1b1b19",acc:"#4f46e5",accGrad:"#4f46e5",ok:"#e3f4ea",okT:"#0b7048",er:"#fbe7e7",erT:"#bd3437",w:"#f7eed8",wT:"#8a5b13",bl:"#e7e8fa",blT:"#3a3aab",pu:"#ece6fc",puT:"#6238c4"};
+  if(org?.accent){T.acc=org.accent;T.accGrad=org.accent;}
+  // Abo & Lebenszyklus
+  const orgPlan=PLANS[org?.plan||"pro"]||PLANS.pro;
+  const orgStatus=org?.status||"active";
+  const setOrgStatus=async(id,s)=>{await saveOrgs(orgs.map(o=>o.id===id?{...o,status:s}:o));};
+  const setOrgPlan=async(id,p)=>{await saveOrgs(orgs.map(o=>o.id===id?{...o,plan:p}:o));};
+
+  // Schicht-Farben aus shiftDefs auflösen
+  const getShiftInfo=key=>{
+    if(SH[key])return{...SH[key],label:SH[key].l};
+    const def=shiftDefs.find(s=>s.key===key);
+    if(!def)return SH["-"];
+    const col=SHIFT_COLORS[def.colorIdx||0]||SHIFT_COLORS[0];
+    return{...col,label:def.label,start:def.start,end:def.end,l:def.label};
+  };
+  const shBg=k=>{const i=getShiftInfo(k);return dark?i.bgD:i.bg;};
+  const shC=k=>{const i=getShiftInfo(k);return dark?i.cD:i.c;};
+  const shX=k=>getShiftInfo(k).x;
+  // Stundenkonto: berechnet Ist-Stunden eines Mitarbeiters in einem Schichtplan
+  const calcHours=(row)=>{if(!row)return 0;const SD=Object.fromEntries(shiftDefs.map(s=>[s.key,s]));return row.reduce((sum,k)=>{const d=SD[k];return sum+(d?hoursOf(d.start,d.end):0);},0);};
+  const targetHours=(emp,days)=>(weekStdHours*(emp.workPct||100)/100)*(days/7);
+  const fmtH=h=>(Math.round(h*10)/10).toLocaleString("de-DE")+" h";
+
+  const crd={background:T.card,borderRadius:14,border:`1px solid ${T.bord}`,padding:18,boxShadow:dark?"none":"0 1px 2px rgba(20,20,20,.05),0 4px 12px rgba(20,20,20,.04)"};
+  const inp={padding:"10px 13px",borderRadius:9,border:`1px solid ${T.bord2}`,fontSize:14,outline:"none",background:T.bg,color:T.tx,width:"100%",boxSizing:"border-box"};
+  const lbl={fontSize:11.5,color:T.tx2,display:"block",marginBottom:5,marginTop:12,fontWeight:600,letterSpacing:.1};
+  const btn=(v="p",sm)=>({padding:sm?"7px 12px":"10px 17px",borderRadius:9,fontWeight:600,cursor:"pointer",fontSize:sm?12.5:14,letterSpacing:-.1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,border:"1px solid",transition:"all .14s ease",background:v==="p"?T.invBg:v==="ok"?T.ok:v==="er"?T.er:v==="w"?T.w:v==="bl"?T.bl:v==="pu"?T.pu:T.card,color:v==="p"?T.inv:v==="ok"?T.okT:v==="er"?T.erT:v==="w"?T.wT:v==="bl"?T.blT:v==="pu"?T.puT:T.tx,borderColor:v==="p"?"transparent":v==="ok"?T.okT+"33":v==="er"?T.erT+"33":v==="w"?T.wT+"33":v==="bl"?T.blT+"33":v==="pu"?T.puT+"33":T.bord2,boxShadow:v==="p"&&!dark?"0 1px 2px rgba(20,20,20,.12)":"none"});
+  const tabBtn=a=>({flex:1,minWidth:64,padding:"13px 6px",border:"none",background:"transparent",cursor:"pointer",fontSize:12.5,fontWeight:a?650:500,letterSpacing:-.1,whiteSpace:"nowrap",color:a?T.acc:T.tx2,borderBottom:a?`2px solid ${T.acc}`:"2px solid transparent",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6});
+  const ovl={position:"fixed",inset:0,zIndex:9990,background:dark?"rgba(0,0,0,.66)":"rgba(28,28,26,.42)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,backdropFilter:"blur(3px)"};
+
+  // ─── Markenelemente ───
+  const initials=name=>(name||"").trim().split(/\s+/).map(w=>w[0]||"").slice(0,2).join("").toUpperCase()||"·";
+  const Logo=({size=36,word=true,wordSize})=> <div style={{display:"inline-flex",alignItems:"center",gap:11}}>
+    <div style={{width:size,height:size,borderRadius:size*0.3,background:T.acc,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:dark?`0 0 0 1px ${T.acc}55`:`0 3px 10px ${T.acc}44`}}>
+      <svg width={size} height={size} viewBox="0 0 36 36" fill="none"><rect x="8" y="11" width="17" height="4" rx="2" fill="#fff"/><rect x="11" y="21" width="17" height="4" rx="2" fill="#fff" opacity="0.7"/></svg>
+    </div>
+    {word&& <div style={{fontFamily:"'Schibsted Grotesk',sans-serif",fontWeight:800,fontSize:wordSize||size*0.52,letterSpacing:-.6,color:T.tx,lineHeight:1}}>ShiftSync</div>}
+  </div>;
+  const Avatar=({emp,size=34})=>{const role=ROLES[emp?.role||"staff"];return <div title={role.l} style={{width:size,height:size,borderRadius:size*0.34,flexShrink:0,background:role.col+(dark?"33":"1f"),color:role.col,display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:size*0.4,letterSpacing:-.3,fontFamily:"'Schibsted Grotesk',sans-serif"}}>{initials(emp?.name)}</div>;};
+
+  const Tst=msg&&<div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:9999,padding:"11px 20px",borderRadius:12,fontWeight:600,fontSize:13,maxWidth:340,textAlign:"center",border:"1px solid",background:msg.type==="ok"?T.ok:T.er,color:msg.type==="ok"?T.okT:T.erT,borderColor:(msg.type==="ok"?T.okT:T.erT)+"40",boxShadow:"0 8px 24px rgba(0,0,0,.15)"}}>{msg.text}</div>;
+  const DarkBtn=<button onClick={togDark} style={{...btn("s",true),padding:"7px 10px"}} title="Hell/Dunkel">{dark?<Icon n="sun"/>:<Icon n="moon"/>}</button>;
+
+  // Berechtigungs-Check (Super-Admin/Anbieter im Support-Modus hat immer alle Rechte)
+  const can=p=>{if(!me)return false;if(wasSuper)return true;if(me.role==="owner")return true;const rolePerms=permsByRole[me.role]||DEFAULT_PERMS[me.role]||{};return!!rolePerms[p];};
+  const canManage=me&&(wasSuper||me.role==="owner"||me.role==="director"||me.role==="manager");
+  const isOwner=me?.role==="owner"||wasSuper;
+  // ─── Sitzplätze / Tarif-Features (orgPlan & orgStatus sind oben definiert) ───
+  const seatLimit=orgPlan.maxEmps;
+  const seatUsed=emps.length;
+  const seatFull=seatUsed>=seatLimit;
+  const canAuto=orgPlan.auto!==false;
+  const trialDaysLeft=org?.trialEnds?Math.ceil((org.trialEnds-Date.now())/864e5):null;
+
+  // ─── Benachrichtigungen ───
+  const allNotifs=Array.isArray(data.notifs)?data.notifs:[];
+  const myNotifs=me?[...allNotifs].filter(n=>n.uid===me.id).sort((a,b)=>b.at-a.at):[];
+  const unreadCount=myNotifs.filter(n=>!n.read).length;
+  // erzeugt Benachrichtigungen, schließt den Auslöser selbst aus
+  const buildNotifs=items=>items.filter(it=>it.uid&&it.uid!==me?.id).map(it=>({id:rid(),at:Date.now(),read:false,...it}));
+  const markAllRead=async()=>{if(!me)return;await saveData({...data,notifs:allNotifs.map(n=>n.uid===me.id?{...n,read:true}:n)});};
+  const markNotifRead=async id=>{await saveData({...data,notifs:allNotifs.map(n=>n.id===id?{...n,read:true}:n)});};
+  const clearMyNotifs=async()=>{if(!me)return;await saveData({...data,notifs:allNotifs.filter(n=>n.uid!==me.id)});setShowNotifs(false);};
+  const notifMeta=t=>({decision_ok:["check",T.ok,T.okT],decision_no:["x",T.er,T.erT],newreq:["inbox",T.bl,T.blT],swap:["repeat",T.pu,T.puT],plan:["calendar",T.bl,T.blT]}[t]||["bell",T.bg2,T.tx2]);
+
+  const NotifBell=me&& <button onClick={()=>setShowNotifs(true)} style={{...btn("s",true),padding:"7px 10px",position:"relative"}} title="Benachrichtigungen"><Icon n="bell"/>{unreadCount>0&& <span style={{position:"absolute",top:-5,right:-5,minWidth:17,height:17,padding:"0 4px",boxSizing:"border-box",borderRadius:9,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",border:`2px solid ${T.card}`}}>{unreadCount>9?"9+":unreadCount}</span>}</button>;
+
+  const NotifPanel=showNotifs&&me&& <div style={ovl} onClick={()=>setShowNotifs(false)}>
+    <div style={{...crd,width:"100%",maxWidth:420,maxHeight:"82vh",display:"flex",flexDirection:"column",padding:0,overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"15px 16px",borderBottom:`1px solid ${T.bord}`}}>
+        <h3 style={{margin:0,fontSize:15,fontWeight:700,display:"inline-flex",alignItems:"center",gap:8}}><Icon n="bell" s={17}/>Benachrichtigungen</h3>
+        {unreadCount>0&& <span style={{fontSize:11,background:"#ef4444",color:"#fff",borderRadius:20,padding:"1px 8px",fontWeight:700}}>{unreadCount} neu</span>}
+        <button style={{...btn("s",true),padding:"5px 9px",marginLeft:"auto"}} onClick={()=>setShowNotifs(false)}><Icon n="x" s={15}/></button>
+      </div>
+      <div style={{padding:"10px 16px",display:"flex",gap:8,borderBottom:`1px solid ${T.bord}`,flexWrap:"wrap"}}>
+        <button style={{...btn("s",true),opacity:unreadCount?1:.5}} onClick={markAllRead} disabled={!unreadCount}><Icon n="check" s={14}/>Alle gelesen</button>
+        <button style={{...btn("s",true),opacity:myNotifs.length?1:.5}} onClick={clearMyNotifs} disabled={!myNotifs.length}><Icon n="trash" s={14}/>Leeren</button>
+      </div>
+      <div style={{overflowY:"auto",padding:"10px 16px 16px"}}>
+        {!myNotifs.length&& <p style={{color:T.tx2,textAlign:"center",padding:"30px 0",margin:0,fontSize:13}}>Keine Benachrichtigungen.</p>}
+        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+          {myNotifs.map(n=>{const[ic,bg,col]=notifMeta(n.type);return (
+            <div key={n.id} onClick={()=>!n.read&&markNotifRead(n.id)} style={{display:"flex",gap:11,padding:"11px 12px",background:n.read?T.bg2:bg,borderRadius:11,cursor:n.read?"default":"pointer",border:`1px solid ${n.read?T.bord:col+"33"}`}}>
+              <div style={{width:30,height:30,borderRadius:9,flexShrink:0,background:n.read?T.card:T.card+"",color:col,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon n={ic} s={16}/></div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:n.read?500:700,color:n.read?T.tx:col}}>{n.text}</div>
+                <div style={{fontSize:10,color:T.tx2,marginTop:2}}>{relTime(n.at)}</div>
+              </div>
+              {!n.read&& <div style={{width:9,height:9,borderRadius:5,background:"#ef4444",flexShrink:0,marginTop:3}}/>}
+            </div>);})}
+        </div>
+      </div>
+    </div>
+  </div>;
+
+  // ─── AUTH ───
+  const doLogin=()=>{
+    const code=lOrg.trim().toUpperCase(),id=lId.trim().toLowerCase(),pin=lPin.trim();
+    if(code==="ADMIN"&&id==="superadmin"&&pin===SUPER_ADMIN_PW){setIsSuper(true);setLOrg("");setLId("");setLPin("");setView("super");return;}
+    (async()=>{
+      const o=orgs.find(x=>x.code===code);
+      if(!o){flash("er","Betriebs-ID nicht gefunden");return;}
+      const d=await db.get(`org_${o.id}`);
+      const empList=d?.emps||[];
+      const byId=empList.find(e=>String(e.lid).trim().toLowerCase()===id);
+      if(!byId){flash("er",`Login-ID „${id}" existiert in diesem Betrieb nicht`);return;}
+      const emp=String(byId.pin).trim()===pin?byId:null;
+      if(!emp){flash("er",`PIN falsch für ${byId.name}`);return;}
+      const st=o.status||"active";
+      if(st==="suspended"){flash("er","Betrieb gesperrt – bitte Anbieter kontaktieren");return;}
+      if(st==="archived"&&emp.role!=="owner"){flash("er","Dieser Betrieb ist offline gestellt");return;}
+      if(st==="trial"&&o.trialEnds&&o.trialEnds<Date.now()){flash("er","Testzeitraum abgelaufen");return;}
+      const safe=d||{emps:[],wishes:{},scheds:{},reqs:[]};
+      if(!Array.isArray(safe.reqs))safe.reqs=[];
+      setOrgId(o.id);setData(safe);setMe(emp);setLOrg("");setLId("");setLPin("");
+      const rolePerms=(o.perms?.[emp.role])||DEFAULT_PERMS[emp.role]||{};
+      const isMgmt=emp.role==="owner"||emp.role==="director"||emp.role==="manager"||Object.values(rolePerms).some(v=>v);
+      if(isMgmt){setView("admin");setATab("dash");}else{setView("emp");setETab("home");}
+    })();
+  };
+
+  const doSetup=async()=>{
+    if(!wiz.coName.trim()||!wiz.name.trim()||!wiz.lid.trim()||wiz.pin.length<4){flash("er","Alle Felder, PIN ≥4");return;}
+    const code=orgCode(wiz.coName.trim());
+    if(orgs.some(o=>o.code===code)){flash("er","Ein Betrieb mit diesem Namen existiert bereits – bitte einloggen.");return;}
+    const newOrg={id:rid(),code,name:wiz.coName.trim(),sub:wiz.coSub.trim()||"Tankstelle · 24/7",weekStdHours:Number(wiz.weekStdHours)||40,shifts:DEFAULT_SHIFTS,holidays:[],perms:DEFAULT_PERMS,createdAt:Date.now(),status:isSuper?"active":"trial",plan:isSuper?"pro":"trial",trialEnds:isSuper?null:Date.now()+14*864e5};
+    const owner={id:rid(),name:wiz.name.trim(),lid:wiz.lid.trim().toLowerCase(),pin:wiz.pin.trim(),pref:"any",role:"owner",workPct:100,inPlan:false,notes:""};
+    const orgList=[...orgs,newOrg];
+    await saveOrgs(orgList);
+    await db.set(`org_${newOrg.id}`,{emps:[owner],wishes:{},scheds:{},reqs:[]});
+    if(isSuper){setView("super");flash("ok",`${newOrg.name} angelegt · Betriebs-ID: ${newOrg.code} · Login: ${owner.lid} / ${owner.pin}`);}
+    else{setOrgId(newOrg.id);setData({emps:[owner],wishes:{},scheds:{},reqs:[]});setMe(owner);setView("admin");setATab("dash");flash("ok",`${newOrg.name} eingerichtet · Betriebs-ID: ${newOrg.code}`);}
+    setWiz({coName:"",coSub:"Tankstelle · 24/7",weekStdHours:40,name:"",lid:"",pin:""});
+  };
+  const logout=()=>{setMe(null);setOrgId(null);setIsSuper(false);setWasSuper(false);setView("login");};
+
+  // ─── ADMIN ACTIONS ───
+  const seedDemo=async()=>{const demo=[{name:"Ben Schmidt",lid:"ben.schmidt",pin:"2222",pref:"any",role:"director",workPct:100,inPlan:false},{name:"Clara Weber",lid:"clara.weber",pin:"3333",pref:"any",role:"manager",workPct:100,inPlan:true},{name:"David Koch",lid:"david.koch",pin:"4444",pref:"any",role:"staff",workPct:100,inPlan:true},{name:"Eva Bauer",lid:"eva.bauer",pin:"5555",pref:"any",role:"staff",workPct:75,inPlan:true},{name:"Frank Huber",lid:"frank.huber",pin:"6666",pref:"FS",role:"staff",workPct:50,inPlan:true},{name:"Gabi Stern",lid:"gabi.stern",pin:"7777",pref:"noN",role:"staff",workPct:100,inPlan:true}].map(e=>({...e,id:rid(),notes:""}));await saveData({...data,emps:[...emps,...demo]});flash("ok","6 Demo-Mitarbeiter ✓");};
+  const addEmp=async()=>{const pinT=nef.pin.trim();if(!nef.name.trim()||!nef.lid.trim()||pinT.length<4){flash("er","Name, ID, PIN (≥4)");return;}if(seatFull){flash("er",`Sitzplatz-Limit erreicht (${seatLimit}). Upgrade nötig.`);return;}const lid=nef.lid.trim().toLowerCase();if(emps.some(e=>e.lid===lid)){flash("er","Login-ID vergeben");return;}const e={id:rid(),...nef,pin:pinT,name:nef.name.trim(),lid,workPct:Number(nef.workPct)||100};await saveData({...data,emps:[...emps,e]});setNef({name:"",lid:"",pin:"",pref:"any",role:"staff",workPct:100,inPlan:true});flash("ok",`${e.name} angelegt · PIN ${e.pin}`);};
+  const saveEf=async()=>{if(!ef.name?.trim()||!ef.lid?.trim()){flash("er","Name und ID");return;}const lid=ef.lid.trim().toLowerCase();if(emps.some(e=>e.id!==editE.id&&e.lid===lid)){flash("er","ID vergeben");return;}await saveData({...data,emps:emps.map(e=>e.id===editE.id?{...e,...ef,name:ef.name.trim(),lid,workPct:Number(ef.workPct)||100}:e)});if(me?.id===editE.id)setMe(p=>({...p,...ef}));setEditE(null);flash("ok","Gespeichert ✓");};
+  const doRst=async()=>{const pinT=rstP.trim();if(pinT.length<4){flash("er","≥4 Zeichen");return;}await saveData({...data,emps:emps.map(e=>e.id===rstE.id?{...e,pin:pinT}:e)});flash("ok",`Neuer PIN: ${rstP}`);setRstE(null);setRstP("");};
+  const delEmp=async emp=>{if(emp.id===me.id){flash("er","Dich selbst nicht löschen");return;}if(emp.role==="owner"){flash("er","Inhaber nicht löschbar");return;}await saveData({...data,emps:emps.filter(e=>e.id!==emp.id)});flash("ok",`${emp.name} entfernt`);};
+  const toggleInPlan=async emp=>{const next=!(emp.inPlan!==false);await saveData({...data,emps:emps.map(e=>e.id===emp.id?{...e,inPlan:next}:e)});flash("ok",`${emp.name} ${next?"wird im Dienstplan berücksichtigt":"aus dem Dienstplan genommen"}`);};
+  // Mehrere eigene Betriebe: verknüpfen & wechseln
+  const switchToOrg=async(targetId,lid)=>{const o=orgs.find(x=>x.id===targetId);if(!o){flash("er","Betrieb nicht gefunden");return;}const d=await db.get(`org_${targetId}`);const safe=d||{emps:[],wishes:{},scheds:{},reqs:[]};if(!Array.isArray(safe.reqs))safe.reqs=[];const acc=safe.emps.find(e=>e.lid===lid)||safe.emps.find(e=>e.role==="owner")||safe.emps[0];if(!acc){flash("er","Kein Account im Zielbetrieb");return;}setOrgId(targetId);setData(safe);setMe(acc);setShowOrgs(false);setATab("dash");flash("ok",`Gewechselt zu ${o.name}`);};
+  const linkOrg=async()=>{const code=linkForm.code.trim().toUpperCase(),lid=linkForm.lid.trim().toLowerCase(),pin=linkForm.pin.trim();if(!code||!lid||!pin){flash("er","Alle Felder ausfüllen");return;}const target=orgs.find(x=>x.code===code);if(!target){flash("er","Betriebs-ID nicht gefunden");return;}if(target.id===orgId){flash("er","Das ist der aktuelle Betrieb");return;}const td=await db.get(`org_${target.id}`);const tsafe=td||{emps:[],wishes:{},scheds:{},reqs:[]};const tacc=(tsafe.emps||[]).find(e=>e.lid===lid&&e.pin===pin);if(!tacc){flash("er","Login-ID oder PIN im Zielbetrieb falsch");return;}if(!(tacc.role==="owner"||tacc.role==="director"||tacc.role==="manager")){flash("er","Dieser Account darf dort nicht planen");return;}const myLink={id:target.id,code:target.code,name:target.name,lid:tacc.lid};const myNew=[...(me.linkedOrgs||[]).filter(l=>l.id!==target.id),myLink];await saveData({...data,emps:emps.map(e=>e.id===me.id?{...e,linkedOrgs:myNew}:e)});setMe(p=>({...p,linkedOrgs:myNew}));const backLink={id:orgId,code:org.code,name:org.name,lid:me.lid};const tNew=[...(tacc.linkedOrgs||[]).filter(l=>l.id!==orgId),backLink];await db.set(`org_${target.id}`,{...tsafe,emps:tsafe.emps.map(e=>e.id===tacc.id?{...e,linkedOrgs:tNew}:e)});setLinkForm({code:"",lid:"",pin:""});flash("ok",`${target.name} verknüpft`);};
+  const unlinkOrg=async targetId=>{const myNew=(me.linkedOrgs||[]).filter(l=>l.id!==targetId);await saveData({...data,emps:emps.map(e=>e.id===me.id?{...e,linkedOrgs:myNew}:e)});setMe(p=>({...p,linkedOrgs:myNew}));flash("ok","Verknüpfung entfernt");};
+
+  // Anfragen → Abwesenheits-Map
+  function datesBetween(from,to){const a=[],s=new Date(from),e=new Date(to);for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1))a.push(isoDate(d));return a;}
+  const absMap=()=>{const m={};reqList.filter(r=>r.status==="ok").forEach(r=>{if(!m[r.uid])m[r.uid]=[];const{y,m0}=pm(planMo);const dates=r.type==="vac"?(r.dates||[]):r.type==="sick"?(r.dates||(r.fromDate&&r.toDate?datesBetween(r.fromDate,r.toDate):r.date?[r.date]:[])):[];dates.forEach(ds=>{const d=new Date(ds);if(d.getFullYear()===y&&d.getMonth()===m0)m[r.uid].push({day:d.getDate(),type:r.type==="vac"?"U":"K"});});});return m;};
+
+  const createEmptyPlan=async()=>{const{y,m0,days,lbl}=pm(planMo);const planEmps=emps.filter(e=>e.inPlan!==false);if(!planEmps.length){flash("er","Keine Mitarbeiter im Plan");return;}const absM=absMap();const sc={};planEmps.forEach(e=>{const row=Array(days).fill("-");(absM[e.id]||[]).forEach(({day,type})=>{if(day>=1&&day<=days)row[day-1]=type;});sc[e.id]=row;});await saveData({...data,scheds:{...scheds,[planMo]:sc}});setDraft(JSON.parse(JSON.stringify(sc)));setPaint(shiftDefs[0]?.key||"-");setEditMode(true);setATab("sched");flash("ok",`Leerer Plan für ${lbl} angelegt · genehmigter Urlaub bereits eingetragen`);};
+
+  const generate=async()=>{if(!canAuto){flash("er","Automatische Planung ist ab Tarif Pro verfügbar");return;}const planEmps=emps.filter(e=>e.inPlan!==false);if(planEmps.length<3){flash("er",`Mind. 3 Mitarbeiter im Plan (aktuell: ${planEmps.length})`);return;}setGenLoad(true);const{y,m0,lbl}=pm(planMo);const wm={};planEmps.forEach(e=>{const arr=[];Object.entries(wishes).forEach(([k,v])=>{if(k.startsWith(planMo+"-")&&k.endsWith(e.id)&&v&&Array.isArray(v.days))v.days.forEach(d=>arr.push(d));});wm[e.id]=arr;});const absM=absMap();const sc=algo(planEmps,wm,absM,y,m0,shiftDefs,weekStdHours);const dd=dim(y,m0);let missing=0;for(let d=0;d<dd;d++)shiftDefs.forEach(s=>{const c=planEmps.filter(e=>(sc[e.id]||[])[d]===s.key).length;if(c<s.required)missing+=s.required-c;});await saveData({...data,scheds:{...scheds,[planMo]:sc}});setGenLoad(false);setEditMode(false);setDraft(null);setATab("sched");missing>0?flash("w",`Plan ${lbl} erstellt · ${missing} Schicht(en) unbesetzt – Stundenkontingente ausgeschöpft (rote Felder prüfen)`):flash("ok",`Plan ${lbl} automatisch erstellt · ${planEmps.length} MA · Stundenkonten eingehalten`);};
+
+  const paintKeys=()=>[...shiftDefs.map(s=>s.key),"U","K","-"];
+  const paintCell=(id,d)=>setDraft(p=>({...p,[id]:p[id].map((s,i)=>i===d?(paint||shiftDefs[0]?.key||"-"):s)}));
+  // Drag & Drop: Schicht von einer Zelle in eine andere verschieben (im Entwurf)
+  const moveShift=(fromId,fromDay,toId,toDay)=>{if(fromId===toId&&fromDay===toDay){setDragSh(null);return;}setDraft(p=>{const key=p[fromId]?.[fromDay];if(!key||!shiftDefs.some(s=>s.key===key))return p;const np={};Object.keys(p).forEach(id=>np[id]=[...p[id]]);np[fromId][fromDay]="-";if(np[toId])np[toId][toDay]=key;return np;});setDragSh(null);};
+  const publishDraft=async()=>{const{lbl}=pm(planMo);const planEmps=emps.filter(e=>e.inPlan!==false);const viol=draft?arbzgCheck(draft,planEmps,shiftDefs):[];const crit=viol.filter(v=>v.sev==="er");if(crit.length&&!confirm(`Achtung: ${crit.length} kritische ArbZG-Verstöße (Ruhezeit/Schichtlänge).\n\n${crit.slice(0,4).map(v=>`• ${v.name}, ${v.day+1}.: ${v.msg}`).join("\n")}${crit.length>4?"\n…":""}\n\nTrotzdem veröffentlichen?`))return;const nt=buildNotifs(planEmps.map(e=>({uid:e.id,type:"plan",text:`Neuer Dienstplan für ${lbl} ist online`})));await saveData({...data,scheds:{...scheds,[planMo]:draft},notifs:[...allNotifs,...nt]});setEditMode(false);setDraft(null);flash("ok","Veröffentlicht ✓ · Team benachrichtigt");};
+  // ─── Stempeluhr ───
+  const clockData=data.clock&&typeof data.clock==="object"?data.clock:{};
+  const todayKey=new Date().toISOString().slice(0,10);
+  const myStamp=me?clockData[todayKey]?.[me.id]:null;
+  const doClock=async()=>{const day={...(clockData[todayKey]||{})};const cur=day[me.id];if(cur&&cur.in&&!cur.out){day[me.id]={...cur,out:Date.now()};flash("ok","Ausgestempelt ✓");}else{day[me.id]={in:Date.now()};flash("ok","Eingestempelt ✓");}await saveData({...data,clock:{...clockData,[todayKey]:day}});};
+  const istHoursMonth=(empId,moKey)=>{let h=0;Object.entries(clockData).forEach(([dk,day])=>{if(dk.startsWith(moKey)&&day[empId]?.in&&day[empId]?.out)h+=(day[empId].out-day[empId].in)/36e5;});return h;};
+  // ─── Lohn-Export (CSV, Steuerberater-/DATEV-tauglich) ───
+  const exportPayroll=()=>{const{y,m0,days,lbl}=pm(planMo);const sc=scheds[planMo]||{};const SD=Object.fromEntries(shiftDefs.map(s=>[s.key,s]));const rows=[["Personalnr","Name","Rolle","Stellenumfang %","Soll-Std","Plan-Std","Ist-Std (gestempelt)","Urlaubstage","Kranktage"]];emps.filter(e=>e.inPlan!==false).forEach(e=>{const row=sc[e.id]||[];const planH=row.reduce((s,k)=>{const d=SD[k];return s+(d?hoursOf(d.start,d.end):0);},0);const soll=(weekStdHours*(e.workPct||100)/100)*(days/7);const ist=istHoursMonth(e.id,planMo);rows.push([e.lid,e.name,ROLES[e.role||"staff"].l,e.workPct||100,soll.toFixed(1),planH.toFixed(1),ist.toFixed(1),row.filter(x=>x==="U").length,row.filter(x=>x==="K").length]);});const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(";")).join("\r\n");const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`Lohnexport_${planMo}.csv`;a.click();flash("ok",`Lohn-Export ${lbl} erstellt`);};
+  // ─── Schichtbörse: Schicht anbieten / übernehmen (mit ArbZG-Prüfung) ───
+  const market=Array.isArray(data.market)?data.market:[];
+  const offerShift=async(moKey,dayIdx,shKey)=>{if(market.some(m=>m.status==="open"&&m.empId===me.id&&m.mo===moKey&&m.day===dayIdx)){flash("er","Bereits angeboten");return;}const off={id:rid(),mo:moKey,day:dayIdx,key:shKey,empId:me.id,empName:me.name,status:"open",at:Date.now()};const mgrs=emps.filter(e=>["owner","director","manager"].includes(e.role)).map(m=>({uid:m.id,type:"swap",text:`${me.name} bietet Schicht ${shKey} am ${dayIdx+1}.${Number(moKey.slice(5,7))}. in der Börse an`}));await saveData({...data,market:[...market,off],notifs:[...allNotifs,...buildNotifs(mgrs)]});flash("ok","Schicht in die Börse gestellt");};
+  const withdrawOffer=async id=>{await saveData({...data,market:market.filter(m=>m.id!==id)});flash("ok","Angebot zurückgezogen");};
+  const takeShift=async off=>{const sc=scheds[off.mo];if(!sc||!sc[off.empId]||sc[off.empId][off.day]!==off.key){flash("er","Schicht existiert nicht mehr");return;}if((sc[me.id]||[])[off.day]&&(sc[me.id]||[])[off.day]!=="-"){flash("er","Du bist an dem Tag bereits eingeplant");return;}
+    const test={};Object.keys(sc).forEach(id=>test[id]=[...sc[id]]);if(!test[me.id])test[me.id]=Array(sc[off.empId].length).fill("-");test[off.empId][off.day]="-";test[me.id][off.day]=off.key;
+    const viol=arbzgCheck({[me.id]:test[me.id]},[me],shiftDefs).filter(v=>v.sev==="er"&&Math.abs(v.day-off.day)<=1);
+    if(viol.length){flash("er",`Übernahme nicht möglich: ${viol[0].msg}`);return;}
+    const nt=buildNotifs([{uid:off.empId,type:"swap",text:`${me.name} hat deine Schicht ${off.key} am ${off.day+1}. übernommen`},...emps.filter(e=>["owner","director","manager"].includes(e.role)).map(m=>({uid:m.id,type:"swap",text:`Börse: ${off.key} am ${off.day+1}. ging von ${off.empName} an ${me.name}`}))]);
+    await saveData({...data,scheds:{...scheds,[off.mo]:test},market:market.map(m=>m.id===off.id?{...m,status:"taken",takerId:me.id,takerName:me.name,takenAt:Date.now()}:m),notifs:[...allNotifs,...nt]});flash("ok",`Schicht übernommen ✓ (${off.key} am ${off.day+1}.)`);};
+
+  const handleReq=async(id,status,note)=>{const req=reqList.find(r=>r.id===id);const tL={sick:"Krankmeldung",vac:"Urlaubsantrag",swap:"Schichttausch"}[req?.type]||"Anfrage";const nt=buildNotifs(req?[{uid:req.uid,type:status==="ok"?"decision_ok":"decision_no",text:`${tL} ${status==="ok"?"genehmigt ✓":"abgelehnt"}${note?` · „${note}"`:""}`}]:[]);await saveData({...data,reqs:reqList.map(r=>r.id===id?{...r,status,decidedAt:Date.now(),decidedBy:me.id,decisionNote:note||""}:r),notifs:[...allNotifs,...nt]});setEditReq(null);setDecNote("");flash("ok",status==="ok"?"Genehmigt ✓":"Abgelehnt");};
+  const saveOrgEdits=async()=>{await saveOrgs(orgs.map(o=>o.id===orgId?{...o,...orgEd}:o));setOrgEd(null);flash("ok","Betrieb gespeichert ✓");};
+  const setAccent=async c=>{await saveOrgs(orgs.map(o=>o.id===orgId?{...o,accent:c}:o));flash("ok","Akzentfarbe übernommen");};
+
+  // Schichtmodelle
+  const saveShift=async()=>{const s=editShift;if(!s.label.trim()||!s.key.trim()){flash("er","Bezeichnung und Kürzel nötig");return;}const newShifts=s.idx===undefined?[...shiftDefs,s]:shiftDefs.map((x,i)=>i===s.idx?s:x);await saveOrgs(orgs.map(o=>o.id===orgId?{...o,shifts:newShifts}:o));setEditShift(null);flash("ok","Schichtmodell gespeichert ✓");};
+
+  // Druckansicht des Monatsplans
+  const printPlan=()=>{
+    const{y,m0,days,lbl:plbl}=pm(planMo);
+    const sc=scheds[planMo];if(!sc){flash("er","Kein Plan zum Drucken");return;}
+    const abs=absMap();
+    const planEmps2=emps.filter(e=>e.inPlan!==false);
+    const SD=Object.fromEntries(shiftDefs.map(s=>[s.key,s]));
+    const w=window.open("","_blank");
+    if(!w){flash("er","Popup-Blocker aktiv? Bitte erlauben.");return;}
+    const rows=planEmps2.map(emp=>{
+      const row=[...(sc[emp.id]||Array(days).fill("-"))];
+      (abs[emp.id]||[]).forEach(({day,type})=>{if(day>=1&&day<=days)row[day-1]=type;});
+      const tot=row.filter(s=>SD[s]).length;
+      return{emp,row,tot};
+    });
+    const colorFor=k=>{if(k==="U")return"#fef3c7";if(k==="K")return"#fee2e2";if(k==="-")return"#f8fafc";const def=SD[k];if(!def)return"#fff";const c=SHIFT_COLORS[def.colorIdx||0];return c.bg;};
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Dienstplan ${plbl}</title><style>
+      @page{size:A4 landscape;margin:1cm;}
+      body{font-family:Arial,sans-serif;margin:0;padding:14px;color:#0f172a;}
+      h1{font-size:18px;margin:0 0 4px;}
+      .sub{color:#64748b;font-size:11px;margin:0 0 14px;}
+      table{border-collapse:collapse;width:100%;font-size:9px;}
+      th{background:#0f172a;color:#fff;padding:5px 4px;text-align:center;border:1px solid #1e293b;}
+      th.name{text-align:left;padding-left:8px;min-width:120px;}
+      td{border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-weight:700;}
+      td.name{text-align:left;padding:4px 8px;font-weight:600;}
+      td.we{background:#f1f5f9;}
+      .sum{font-weight:800;background:#f8fafc;}
+      .legend{margin-top:12px;font-size:10px;color:#64748b;display:flex;gap:14px;flex-wrap:wrap;}
+      .legend span{display:inline-flex;align-items:center;gap:4px;}
+      .swatch{display:inline-block;width:12px;height:12px;border-radius:2px;border:1px solid #cbd5e1;}
+      .foot{margin-top:14px;font-size:9px;color:#94a3b8;display:flex;justify-content:space-between;}
+      @media print{button{display:none;}}
+      .printbtn{position:fixed;top:10px;right:10px;padding:10px 18px;background:#0f172a;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;}
+    </style></head><body>
+      <button class="printbtn" onclick="window.print()">Drucken</button>
+      <h1>Dienstplan ${plbl} — ${org.name}</h1>
+      <p class="sub">Betriebs-ID: ${org.code} · Erstellt: ${new Date().toLocaleDateString("de-DE")} ${new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}</p>
+      <table>
+        <thead><tr><th class="name">Mitarbeiter</th>
+          ${Array.from({length:days},(_,i)=>{const dow=new Date(y,m0,i+1).getDay();const dn=["So","Mo","Di","Mi","Do","Fr","Sa"][dow];return `<th>${dn}<br>${i+1}</th>`;}).join("")}
+          <th>Σ</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(({emp,row,tot})=>{const role=ROLES[emp.role||"staff"];return `<tr>
+            <td class="name">${role.ic} ${emp.name} <span style="font-size:8px;color:#94a3b8;font-weight:400">${emp.workPct||100}%</span></td>
+            ${row.map((sh,i)=>{const dow=new Date(y,m0,i+1).getDay();const we=dow===0||dow===6;const bg=colorFor(sh);return `<td class="${we?"we":""}" style="background:${bg}">${sh==="-"?"":sh}</td>`;}).join("")}
+            <td class="sum">${tot}</td>
+          </tr>`;}).join("")}
+        </tbody>
+      </table>
+      <div class="legend">
+        ${shiftDefs.map(s=>`<span><span class="swatch" style="background:${SHIFT_COLORS[s.colorIdx||0].bg}"></span> ${s.key} = ${s.label} ${s.start}–${s.end}</span>`).join("")}
+        <span><span class="swatch" style="background:#fef3c7"></span> U = Urlaub</span>
+        <span><span class="swatch" style="background:#fee2e2"></span> K = Krank</span>
+      </div>
+      <div class="foot"><span>ShiftSync Pro · ${org.name}</span><span>Seite 1 von 1</span></div>
+      <script>setTimeout(()=>window.print(),500);<\/script>
+    </body></html>`;
+    w.document.write(html);w.document.close();
+  };
+  // CSV-Export
+  const exportCSV=()=>{
+    const{y,m0,days,lbl:plbl}=pm(planMo);
+    const sc=scheds[planMo];if(!sc){flash("er","Kein Plan zum Exportieren");return;}
+    const abs=absMap();
+    const planEmps2=emps.filter(e=>e.inPlan!==false);
+    const SD=Object.fromEntries(shiftDefs.map(s=>[s.key,s]));
+    let csv="Mitarbeiter;Rolle;Stelle %;"+Array.from({length:days},(_,i)=>`${i+1}.`).join(";")+";Arbeitstage\n";
+    planEmps2.forEach(emp=>{
+      const row=[...(sc[emp.id]||Array(days).fill("-"))];
+      (abs[emp.id]||[]).forEach(({day,type})=>{if(day>=1&&day<=days)row[day-1]=type;});
+      const tot=row.filter(s=>SD[s]).length;
+      csv+=`${emp.name};${ROLES[emp.role||"staff"].l};${emp.workPct||100};${row.map(s=>s==="-"?"":s).join(";")};${tot}\n`;
+    });
+    const a=document.createElement("a");a.href=`data:text/csv;charset=utf-8,\uFEFF${encodeURIComponent(csv)}`;a.download=`Dienstplan_${plbl.replace(" ","_")}.csv`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+    flash("ok","CSV exportiert ✓");
+  };
+  const delShift=async idx=>{const newShifts=shiftDefs.filter((_,i)=>i!==idx);await saveOrgs(orgs.map(o=>o.id===orgId?{...o,shifts:newShifts}:o));flash("ok","Schichtmodell entfernt");};
+
+  // Wunschfrei-Sperrtage
+  const addHoliday=async()=>{if(!holidayDate||!holidayName.trim()){flash("er","Datum und Name nötig");return;}const newH=[...holidays,{date:holidayDate,name:holidayName.trim()}];await saveOrgs(orgs.map(o=>o.id===orgId?{...o,holidays:newH}:o));setHolidayDate("");setHolidayName("");flash("ok","Sperrtag hinzugefügt ✓");};
+  const delHoliday=async idx=>{const newH=holidays.filter((_,i)=>i!==idx);await saveOrgs(orgs.map(o=>o.id===orgId?{...o,holidays:newH}:o));flash("ok","Sperrtag entfernt");};
+
+  // Berechtigungen
+  const setPerm=async(role,perm,val)=>{const newPerms={...(permsByRole),[role]:{...(permsByRole[role]||{}),[perm]:val}};await saveOrgs(orgs.map(o=>o.id===orgId?{...o,perms:newPerms}:o));};
+
+  // ─── EMP ACTIONS ───
+  const saveWishes=async()=>{const key=`${wishMonth}-${me.id}`;await saveData({...data,wishes:{...wishes,[key]:{days:wsel,note:wishNote,at:Date.now()}}});flash("ok","Wunschfrei-Tage gespeichert ✓");};
+  const togWish=d=>{if(wsel.includes(d))setWsel(wsel.filter(x=>x!==d));else if(wsel.length<3)setWsel([...wsel,d]);else flash("er","Max. 3 Tage");};
+  const loadWishes=mo=>{const key=`${mo}-${me.id}`;const w=wishes[key];if(w&&typeof w==="object"&&Array.isArray(w.days)){setWsel(w.days);setWishNote(w.note||"");}else if(Array.isArray(w)){setWsel(w);setWishNote("");}else{setWsel([]);setWishNote("");}};
+  const savePref=async p=>{await saveData({...data,emps:emps.map(e=>e.id===me.id?{...e,pref:p}:e)});setMe(x=>({...x,pref:p}));flash("ok","Gespeichert ✓");};
+  const doChPin=async()=>{const cur=emps.find(e=>e.id===me.id);if(pinCh.cur!==cur.pin){flash("er","Aktueller PIN falsch");return;}if(pinCh.nw.length<4){flash("er","≥4 Zeichen");return;}if(pinCh.nw!==pinCh.cf){flash("er","PINs ungleich");return;}await saveData({...data,emps:emps.map(e=>e.id===me.id?{...e,pin:pinCh.nw}:e)});setMe(p=>({...p,pin:pinCh.nw}));setPinCh({cur:"",nw:"",cf:""});flash("ok","PIN geändert ✓");};
+  const submitRq=async()=>{const r={id:rid(),type:rqForm.type,uid:me.id,status:"pending",at:Date.now(),note:rqForm.note};if(rqForm.type==="sick"){if(!rqForm.fromDate){flash("er","Datum");return;}r.fromDate=rqForm.fromDate;r.toDate=rqForm.toDate||rqForm.fromDate;r.dates=datesBetween(r.fromDate,r.toDate);}else if(rqForm.type==="vac"){if(!rqForm.dates.length){flash("er","Tage wählen");return;}r.dates=rqForm.dates;}else if(rqForm.type==="swap"){if(!rqForm.fromDate||!rqForm.toId||!rqForm.toDate){flash("er","Alle Felder");return;}r.date=rqForm.fromDate;r.toId=rqForm.toId;r.toDate=rqForm.toDate;}const tL2={sick:"Krankmeldung",vac:"Urlaubsantrag",swap:"Schichttausch"}[r.type];const mgrs=emps.filter(e=>e.role==="owner"||e.role==="director"||e.role==="manager").map(m=>({uid:m.id,type:"newreq",text:`Neue ${tL2}-Anfrage von ${me.name}`}));const swapN=r.type==="swap"&&r.toId?[{uid:r.toId,type:"swap",text:`${me.name} möchte mit dir tauschen: ${r.date} ↔ ${r.toDate}`}]:[];const nt=buildNotifs([...mgrs,...swapN]);await saveData({...data,reqs:[...reqList,r],notifs:[...allNotifs,...nt]});setRqForm({type:"vac",dates:[],note:"",toId:"",toDate:"",fromDate:""});flash("ok","Anfrage gesendet ✓");setRqTab("sent");};
+
+  const today=new Date(),cm=tms(),nm=nms();
+  const{y:cy,m0:cm0}=pm(cm);const{y:ny,m0:nm0,days:nmD}=pm(nm);
+  const pendCount=reqList.filter(r=>r.status==="pending").length;
+
+  const Header=(title,sub,right)=> <div style={{padding:isMobile?"10px 13px":"13px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:`1px solid ${T.bord}`,background:T.card,position:"sticky",top:0,zIndex:10}}><div style={{minWidth:0,flex:"1 1 auto"}}><div style={{fontSize:9,color:T.tx2,letterSpacing:.8,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div><div style={{fontWeight:800,fontSize:isMobile?15:16,color:T.tx}}>{title}</div></div><div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{right}</div></div>;
+  const TabBar=(tabs,active,onCh)=> <div style={{display:"flex",background:T.card,borderBottom:`1px solid ${T.bord}`,overflowX:"auto"}}>{tabs.map(([k,l,ic])=> <button key={k} style={tabBtn(active===k)} onClick={()=>onCh(k)}>{ic&&<Icon n={ic} s={15}/>}{l}</button>)}</div>;
+
+  if(view==="loading")return <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",color:T.tx2}}>Lädt…</div>;
+
+  // ═══ SUPER-ADMIN ═══
+  if(view==="super"&&isSuper){
+    return (
+      <div style={{minHeight:"100vh",background:T.bg,color:T.tx}}>
+        {Tst}
+        {Header("Super-Admin · Anbieter-Konsole","SHIFTSYNC PRO",<>{DarkBtn}<button style={btn("s",true)} onClick={logout}>Logout</button></>)}
+        <div style={{padding:16,maxWidth:900,margin:"0 auto"}}>
+          <div style={{...crd,marginBottom:14,background:T.pu,borderColor:T.puT+"40"}}>
+            <h3 style={{margin:"0 0 6px",fontSize:15,color:T.puT}}>Anbieter-Bereich</h3>
+            <p style={{margin:0,fontSize:13,color:T.puT}}>Kunden-Betriebe anlegen, Tarife verwalten, offline nehmen/reaktivieren, für Support einloggen.</p>
+          </div>
+          <div style={{...crd,marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:700}}>Kunden-Betriebe ({orgs.length})</h3>
+              <button style={btn("p")} onClick={()=>setView("setup")}><Icon n="plus" s={15}/>Neuen Kunden anlegen</button>
+            </div>
+            {!orgs.length&& <p style={{color:T.tx2,textAlign:"center",padding:"28px 0",margin:0,fontSize:13}}>Noch keine Kunden.</p>}
+            <div style={{display:"flex",flexDirection:"column",gap:9}}>
+              {orgs.map(o=>{const st=o.status||"active";const pl=PLANS[o.plan]||PLANS.pro;const sd=STATUS[st]||STATUS.active;return (<div key={o.id} style={{padding:"13px 14px",background:T.bg2,borderRadius:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",opacity:st==="archived"?.6:1}}>
+                <div style={{flex:1,minWidth:160}}>
+                  <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{o.name}<span style={{fontSize:9.5,fontWeight:700,background:sd.col+"22",color:sd.col,borderRadius:20,padding:"2px 8px"}}>{sd.l}</span></div>
+                  <div style={{fontSize:11,color:T.tx2,marginTop:2}}>ID: <strong style={{fontFamily:"ui-monospace,monospace",letterSpacing:1,color:T.acc}}>{o.code}</strong> · {pl.l} · {pl.price}</div>
+                </div>
+                <select value={o.plan&&PLANS[o.plan]?o.plan:"pro"} onChange={e=>updOrg(o.id,{plan:e.target.value,status:e.target.value==="trial"?"trial":(st==="trial"?"active":st)})} style={{...inp,width:"auto",padding:"6px 9px",fontSize:12}}>{Object.entries(PLANS).sort((a,b)=>a[1].order-b[1].order).map(([k,p])=> <option key={k} value={k}>{p.l}</option>)}</select>
+                {st!=="archived"
+                  ? <button style={btn("w",true)} onClick={()=>updOrg(o.id,{status:"archived"})} title="Offline nehmen"><Icon n="lock" s={14}/>Offline</button>
+                  : <button style={btn("ok",true)} onClick={()=>updOrg(o.id,{status:"active"})} title="Reaktivieren"><Icon n="check" s={14}/>Reaktivieren</button>}
+                <button style={btn("bl",true)} onClick={async()=>{const d=await db.get(`org_${o.id}`);const safe=d||{emps:[],wishes:{},scheds:{},reqs:[]};if(!Array.isArray(safe.reqs))safe.reqs=[];const owner=safe.emps.find(e=>e.role==="owner")||safe.emps[0];if(!owner){flash("er","Kein Account");return;}setOrgId(o.id);setData(safe);setMe(owner);setIsSuper(false);setWasSuper(true);setView("admin");setATab("dash");}}><Icon n="logout" s={14}/>Support</button>
+                <button style={{...btn("er",true),padding:"7px 9px"}} onClick={async()=>{if(!confirm(`${o.name} und ALLE Daten endgültig löschen?`))return;await saveOrgs(orgs.filter(x=>x.id!==o.id));await db.set(`org_${o.id}`,null);flash("ok",`${o.name} gelöscht`);}} title="Endgültig löschen"><Icon n="trash" s={14}/></button>
+              </div>);})}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══ SETUP ═══
+  if(view==="setup")return (
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20,color:T.tx}}>
+      {Tst}
+      <div style={{position:"absolute",top:16,right:16}}>{DarkBtn}</div>
+      <div style={{...crd,maxWidth:420,width:"100%"}}>
+        <div style={{textAlign:"center",marginBottom:18}}><div style={{display:"flex",justifyContent:"center",marginBottom:10}}><Logo size={46} word={false}/></div><h2 style={{margin:"6px 0 2px",fontSize:20,fontWeight:800}}>{isSuper?"Neuen Kunden anlegen":"Betrieb einrichten"}</h2><p style={{margin:0,fontSize:12.5,color:T.tx2}}>{isSuper?"Eine Betriebs-ID wird automatisch generiert.":"14 Tage kostenlos testen – keine Zahlungsdaten nötig."}</p></div>
+        <label style={lbl}>Name des Betriebs</label><input style={inp} placeholder="Euro Rastpark Eichenzell" value={wiz.coName} onChange={e=>setWiz(p=>({...p,coName:e.target.value}))}/>
+        <label style={lbl}>Untertitel</label><input style={inp} value={wiz.coSub} onChange={e=>setWiz(p=>({...p,coSub:e.target.value}))}/>
+        <label style={lbl}>Standard-Wochenstunden</label><input style={inp} type="number" min="20" max="48" value={wiz.weekStdHours} onChange={e=>setWiz(p=>({...p,weekStdHours:e.target.value}))}/>
+        <p style={{fontSize:10,color:T.tx2,margin:"4px 0 0"}}>z. B. 40h Vollzeit. Die KI plant Mitarbeiter anteilig dazu (z. B. 50% = 20h/Woche).</p>
+        <div style={{borderTop:`1px solid ${T.bord}`,margin:"16px 0 0",paddingTop:4}}/>
+        <p style={{fontSize:12,color:T.tx2,margin:"8px 0 0",fontWeight:600}}>Inhaber-Login</p>
+        <label style={lbl}>Name</label><input style={inp} placeholder="Max Mustermann" value={wiz.name} onChange={e=>setWiz(p=>({...p,name:e.target.value}))}/>
+        <label style={lbl}>Login-ID</label><input style={inp} placeholder="max" value={wiz.lid} onChange={e=>setWiz(p=>({...p,lid:e.target.value}))}/>
+        <label style={lbl}>PIN (≥4)</label><input style={inp} type="password" value={wiz.pin} onChange={e=>setWiz(p=>({...p,pin:e.target.value}))}/>
+        <button style={{...btn("p"),width:"100%",marginTop:18}} onClick={doSetup}><Icon n="check" s={15}/>{isSuper?"Anlegen":"14 Tage kostenlos starten"}</button>
+        <button style={{...btn("s"),width:"100%",marginTop:8}} onClick={()=>setView(isSuper?"super":"login")}>Zurück zum Login</button>
+      </div>
+    </div>
+  );
+
+  // ═══ LOGIN ═══
+  if(view==="login")return (
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20,color:T.tx}}>
+      {Tst}
+      <div style={{position:"absolute",top:16,right:16}}>{DarkBtn}</div>
+      <div style={{display:"flex",alignItems:"center",gap:13,marginBottom:8}}>
+        <Logo size={52} word={false}/>
+        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+          <span style={{fontFamily:"'Schibsted Grotesk',sans-serif",fontWeight:800,fontSize:30,letterSpacing:-1,color:T.tx}}>ShiftSync</span>
+          <span style={{fontSize:11,fontWeight:700,letterSpacing:.5,color:T.acc,border:`1px solid ${T.acc}55`,borderRadius:6,padding:"2px 7px"}}>PRO</span>
+        </div>
+      </div>
+      <p style={{margin:"0 0 28px",fontSize:13.5,color:T.tx2}}>Dienstplanung für den 24/7-Betrieb</p>
+      <div style={{...crd,maxWidth:360,width:"100%",padding:22}}>
+        <label style={lbl}>Betriebs-ID</label>
+        <input style={{...inp,fontFamily:"ui-monospace,monospace",letterSpacing:3,textTransform:"uppercase",fontWeight:700}} placeholder="z. B. AB12C" value={lOrg} onChange={e=>setLOrg(e.target.value)} autoFocus/>
+        <label style={lbl}>Login-ID</label>
+        <input style={inp} placeholder="z. B. max" value={lId} onChange={e=>setLId(e.target.value)}/>
+        <label style={lbl}>PIN</label>
+        <input style={{...inp,letterSpacing:8,fontSize:20,fontWeight:700,textAlign:"center"}} type="password" placeholder="••••" value={lPin} onChange={e=>setLPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+        <button style={{...btn("p"),width:"100%",marginTop:20}} onClick={doLogin}>Anmelden</button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:18,maxWidth:360,width:"100%",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,width:"100%"}}><div style={{flex:1,height:1,background:T.bord}}/><span style={{fontSize:11,color:T.tx2}}>oder</span><div style={{flex:1,height:1,background:T.bord}}/></div>
+        <p style={{margin:0,fontSize:12.5,color:T.tx2,textAlign:"center",lineHeight:1.5}}>Noch keinen Betrieb? Lege dir einen an und teste ShiftSync Pro <strong style={{color:T.tx}}>14 Tage kostenlos</strong>.</p>
+        <button style={{...btn("s"),width:"100%"}} onClick={()=>setView("setup")}><Icon n="plus" s={15}/>Betrieb anlegen & testen</button>
+      </div>
+      <p style={{position:"absolute",bottom:16,fontSize:11,color:T.tx2}}>ShiftSync Pro</p>
+    </div>
+  );
+
+  // ═══ ADMIN ═══
+  if(view==="admin"&&me&&org){
+    const{y,m0,days,lbl:plbl}=pm(planMo);
+    const baseSc=editMode?draft:(scheds[planMo]||null);
+    const abs=absMap();
+    const curSc=baseSc?(()=>{const c={};Object.keys(baseSc).forEach(id=>{c[id]=[...baseSc[id]];(abs[id]||[]).forEach(({day,type})=>{if(day>=1&&day<=days)c[id][day-1]=type;});});return c;})():null;
+    const todTeam=scheds[cm]?emps.map(e=>({e,sh:scheds[cm][e.id]?.[today.getDate()-1]||"-"})).filter(x=>x.sh!=="-"):[];
+    const isShift=k=>shiftDefs.some(s=>s.key===k);
+    const cov=curSc?Array.from({length:days},(_,d)=>{const o={};shiftDefs.forEach(s=>{o[s.key]=emps.filter(e=>(curSc[e.id]||[])[d]===s.key).length;});return o;}):[];
+    const gaps=cov.filter(c=>shiftDefs.some(s=>c[s.key]<s.required)).length;
+    const planEmps=emps.filter(e=>e.inPlan!==false);
+    // Compliance-Wächter: läuft live auf dem aktuellen Stand (Entwurf oder veröffentlicht)
+    const arbzg=curSc?arbzgCheck(curSc,planEmps,shiftDefs):[];
+    const arbzgSet=new Set(arbzg.map(i=>i.empId+":"+i.day));
+    const arbzgErr=arbzg.filter(i=>i.sev==="er").length;
+    const filteredEmps=filterEmp==="all"?planEmps:planEmps.filter(e=>e.id===filterEmp);
+    const pdate=new Date(planDate);
+    const viewDays=planView==="day"?[pdate]:planView==="week"?(()=>{const s=new Date(pdate);s.setDate(s.getDate()-((s.getDay()+6)%7));return Array.from({length:7},(_,i)=>{const d=new Date(s);d.setDate(s.getDate()+i);return d;});})():[];
+    const filteredReqs=reqFilter==="all"?reqList:reqList.filter(r=>r.status===reqFilter);
+
+    return (
+      <div style={{minHeight:"100vh",background:T.bg,color:T.tx}}>
+        {Tst}
+        {NotifPanel}
+
+        {showOrgs&& <div style={ovl} onClick={()=>setShowOrgs(false)}><div style={{...crd,width:"100%",maxWidth:400,maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>{wasSuper?"Kunde wechseln":"Meine Betriebe"}</h3><button style={{...btn("s",true),padding:"5px 9px"}} onClick={()=>setShowOrgs(false)}><Icon n="x" s={15}/></button></div>
+          {wasSuper
+            ? orgs.map(o=> <div key={o.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:o.id===orgId?T.bl:T.bg2,borderRadius:10,marginBottom:6}}><div style={{flex:1}}><div style={{fontWeight:700,fontSize:13}}>{o.name}</div><div style={{fontSize:11,color:T.tx2}}>ID: {o.code}</div></div>{o.id===orgId?<span style={{fontSize:11,color:T.blT,fontWeight:700}}>aktiv</span>:<button style={btn("s",true)} onClick={()=>switchToOrg(o.id)}>öffnen</button>}</div>)
+            : <>
+              {[{id:orgId,code:org.code,name:org.name,lid:me.lid,cur:true},...(me.linkedOrgs||[]).map(l=>{const o=orgs.find(x=>x.id===l.id);return o?{...l,code:o.code,name:o.name}:l;}).filter(l=>orgs.some(x=>x.id===l.id))].map(l=> <div key={l.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:l.id===orgId?T.bl:T.bg2,borderRadius:10,marginBottom:6}}><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:13}}>{l.name}</div><div style={{fontSize:11,color:T.tx2}}>ID: {l.code}</div></div>{l.id===orgId?<span style={{fontSize:11,color:T.blT,fontWeight:700}}>aktiv</span>:<><button style={btn("s",true)} onClick={()=>switchToOrg(l.id,l.lid)}>öffnen</button><button style={{...btn("er",true),padding:"7px 9px"}} onClick={()=>unlinkOrg(l.id)} title="Verknüpfung lösen"><Icon n="x" s={14}/></button></>}</div>)}
+              <div style={{borderTop:`1px solid ${T.bord}`,marginTop:12,paddingTop:14}}>
+                <div style={{fontWeight:700,fontSize:13,marginBottom:3}}>Weiteren Betrieb verknüpfen</div>
+                <p style={{fontSize:11,color:T.tx2,margin:"0 0 10px"}}>Nur eigene Betriebe: Gib Betriebs-ID und deinen Login dort ein. Danach kannst du ohne Abmelden wechseln.</p>
+                <input style={{...inp,fontFamily:"ui-monospace,monospace",letterSpacing:2,textTransform:"uppercase",fontWeight:700,marginBottom:8}} placeholder="Betriebs-ID" value={linkForm.code} onChange={e=>setLinkForm(p=>({...p,code:e.target.value}))}/>
+                <input style={{...inp,marginBottom:8}} placeholder="Login-ID dort" value={linkForm.lid} onChange={e=>setLinkForm(p=>({...p,lid:e.target.value}))}/>
+                <input style={{...inp,marginBottom:10}} type="password" placeholder="PIN dort" value={linkForm.pin} onChange={e=>setLinkForm(p=>({...p,pin:e.target.value}))}/>
+                <button style={{...btn("p"),width:"100%"}} onClick={linkOrg}><Icon n="plus" s={15}/>Verknüpfen</button>
+              </div>
+            </>}
+        </div></div>}
+
+        {editE&& <div style={ovl}><div style={{...crd,width:"100%",maxWidth:400,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>{editE.name}</h3><button style={{...btn("s",true),padding:"4px 9px"}} onClick={()=>setEditE(null)}>✕</button></div>
+          <label style={lbl}>Name</label><input style={inp} value={ef.name||""} onChange={e=>setEf(p=>({...p,name:e.target.value}))}/>
+          <label style={lbl}>Login-ID</label><input style={inp} value={ef.lid||""} onChange={e=>setEf(p=>({...p,lid:e.target.value}))}/>
+          <label style={lbl}>Schichtpräferenz</label><select style={inp} value={ef.pref||"any"} onChange={e=>setEf(p=>({...p,pref:e.target.value}))}>{PR.map(p=> <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s=> <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select>
+          <label style={lbl}>Stellenumfang (%)</label><input type="number" min="10" max="100" step="5" style={inp} value={ef.workPct||100} onChange={e=>setEf(p=>({...p,workPct:e.target.value}))}/>
+          <p style={{fontSize:10,color:T.tx2,margin:"3px 0 0"}}>z. B. 100 = Vollzeit ({weekStdHours}h), 50 = halbe Stelle ({weekStdHours/2}h)</p>
+          <label style={lbl}>Rolle</label><select style={inp} value={ef.role||"staff"} onChange={e=>setEf(p=>({...p,role:e.target.value}))} disabled={editE.role==="owner"&&!isOwner}>
+            <option value="staff">Mitarbeiter</option>
+            <option value="manager">Shopleiter</option>
+            <option value="director">Geschäftsführer</option>
+            {(isOwner||editE.role==="owner")&& <option value="owner">Inhaber</option>}
+          </select>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,padding:"9px 12px",background:T.bg2,borderRadius:10}}>
+            <input type="checkbox" id="editInPlan" checked={ef.inPlan!==false} onChange={e=>setEf(p=>({...p,inPlan:e.target.checked}))}/>
+            <label htmlFor="editInPlan" style={{fontSize:12,cursor:"pointer",flex:1}}>Bei Dienstplan-Erstellung berücksichtigen</label>
+          </div>
+          <p style={{fontSize:10,color:T.tx2,margin:"4px 0 0"}}>Inhaber & Geschäftsführer üblicherweise deaktiviert, da nicht im Schichtbetrieb.</p>
+          <div style={{display:"flex",gap:8,marginTop:16}}><button style={{...btn("s"),flex:1}} onClick={()=>setEditE(null)}>Abbrechen</button><button style={{...btn("p"),flex:2}} onClick={saveEf}>Speichern</button></div>
+        </div></div>}
+
+        {rstE&& <div style={ovl}><div style={{...crd,width:"100%",maxWidth:360}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>PIN: {rstE.name}</h3><button style={{...btn("s",true),padding:"4px 9px"}} onClick={()=>{setRstE(null);setRstP("");}}>✕</button></div><label style={lbl}>Neuer PIN (≥4)</label><input style={{...inp,fontSize:24,letterSpacing:10,textAlign:"center",fontWeight:700}} value={rstP} onChange={e=>setRstP(e.target.value)}/><div style={{display:"flex",gap:8,marginTop:16}}><button style={{...btn("s"),flex:1}} onClick={()=>{setRstE(null);setRstP("");}}>Abbrechen</button><button style={{...btn("p"),flex:2}} onClick={doRst}>Setzen</button></div></div></div>}
+
+        {editShift&& <div style={ovl}><div style={{...crd,width:"100%",maxWidth:400,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>{editShift.idx===undefined?"Neues Schichtmodell":"Schichtmodell"}</h3><button style={{...btn("s",true),padding:"4px 9px"}} onClick={()=>setEditShift(null)}>✕</button></div>
+          <label style={lbl}>Bezeichnung</label><input style={inp} placeholder="z. B. Früh" value={editShift.label} onChange={e=>setEditShift(p=>({...p,label:e.target.value}))}/>
+          <label style={lbl}>Kürzel (1 Buchstabe)</label><input style={inp} maxLength={2} placeholder="z. B. F" value={editShift.key} onChange={e=>setEditShift(p=>({...p,key:e.target.value.toUpperCase()}))}/>
+          <label style={lbl}>Beginn</label><input style={inp} type="time" value={editShift.start} onChange={e=>setEditShift(p=>({...p,start:e.target.value}))}/>
+          <label style={lbl}>Ende</label><input style={inp} type="time" value={editShift.end} onChange={e=>setEditShift(p=>({...p,end:e.target.value}))}/>
+          <p style={{fontSize:10,color:T.tx2,margin:"3px 0 0"}}>Dauer: {hoursOf(editShift.start,editShift.end)} Stunden</p>
+          <label style={lbl}>Mitarbeiter pro Schicht</label><input style={inp} type="number" min="1" max="20" value={editShift.required} onChange={e=>setEditShift(p=>({...p,required:Number(e.target.value)||1}))}/>
+          <label style={lbl}>Farbe</label><div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>{SHIFT_COLORS.map((c,i)=> <button key={i} onClick={()=>setEditShift(p=>({...p,colorIdx:i}))} style={{width:34,height:34,borderRadius:8,border:editShift.colorIdx===i?`3px solid ${T.tx}`:`1px solid ${T.bord2}`,background:c.bg,cursor:"pointer"}}/>)}</div>
+          <div style={{display:"flex",gap:8,marginTop:16}}><button style={{...btn("s"),flex:1}} onClick={()=>setEditShift(null)}>Abbrechen</button><button style={{...btn("p"),flex:2}} onClick={saveShift}>Speichern</button></div>
+        </div></div>}
+
+        {editReq&& <div style={ovl}><div style={{...crd,width:"100%",maxWidth:400}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>Entscheidung mit Notiz</h3><button style={{...btn("s",true),padding:"4px 9px"}} onClick={()=>{setEditReq(null);setDecNote("");}}>✕</button></div>
+          <p style={{fontSize:12,color:T.tx2,margin:"0 0 8px"}}>Anfrage von <strong>{emps.find(e=>e.id===editReq.req.uid)?.name}</strong></p>
+          <label style={lbl}>Notiz (optional, für den Mitarbeiter sichtbar)</label>
+          <textarea style={{...inp,minHeight:60,resize:"vertical"}} value={decNote} onChange={e=>setDecNote(e.target.value)} placeholder="z. B. Vertretung gefunden, dieses Mal nicht möglich, ..."/>
+          <div style={{display:"flex",gap:8,marginTop:16}}><button style={{...btn("er"),flex:1}} onClick={()=>handleReq(editReq.req.id,"no",decNote)}>✗ Ablehnen</button><button style={{...btn("ok"),flex:1}} onClick={()=>handleReq(editReq.req.id,"ok",decNote)}>✓ Genehmigen</button></div>
+        </div></div>}
+
+        {Header(<span style={{display:"inline-flex",alignItems:"center",gap:9}}><Avatar emp={me} size={30}/>{me.name}</span>,`${org.name.toUpperCase()} · ${org.code}${wasSuper?" · SUPPORT-MODUS":""}`,<>{DarkBtn}{NotifBell}{wasSuper&& <button style={btn("pu",true)} onClick={()=>{setIsSuper(true);setWasSuper(false);setOrgId(null);setMe(null);setView("super");}}><Icon n="shield" s={14}/>Konsole</button>}{(wasSuper||me.role==="owner")&& <button style={{...btn("s",true),padding:"7px 10px"}} onClick={()=>setShowOrgs(true)} title={wasSuper?"Kunde wechseln":"Betrieb wechseln"}><Icon n="building"/></button>}<button style={btn("bl",true)} onClick={()=>{setView("emp");setETab("home");}} title="Mitarbeiter-Ansicht"><Icon n="user"/></button><button style={{...btn("s",true),padding:"7px 10px"}} onClick={logout} title="Abmelden"><Icon n="logout"/></button></>)}
+        {TabBar([["dash","Übersicht","chart"],["staff","Team","users"],["reqs",`Anfragen${pendCount?" ("+pendCount+")":""}`,"inbox"],["sched","Planer","calendar"],...((isOwner||can("manageOrg")||can("manageShifts"))?[["settings","Betrieb","settings"]]:[])],aTab,setATab)}
+
+        <div style={{padding:16,maxWidth:1200,margin:"0 auto"}}>
+          {wasSuper&& <div style={{...crd,marginBottom:14,background:T.pu,borderColor:T.puT+"40",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{fontSize:20}}></div>
+            <div style={{flex:1,minWidth:180}}>
+              <div style={{fontWeight:700,fontSize:13,color:T.puT}}>Anbieter-Support-Modus aktiv</div>
+              <div style={{fontSize:11,color:T.puT,opacity:.85}}>Du arbeitest im Auftrag des Kunden. Alle Berechtigungen sind freigeschaltet. Änderungen werden gespeichert.</div>
+            </div>
+            <button style={btn("pu",true)} onClick={()=>{setIsSuper(true);setWasSuper(false);setOrgId(null);setMe(null);setView("super");}}><Icon n="shield" s={14}/>Zur Konsole</button>
+          </div>}
+
+          {aTab==="dash"&& <div>
+            {orgStatus!=="active"&& <div style={{...crd,marginBottom:14,background:orgStatus==="trial"?T.bl:T.w,borderColor:(orgStatus==="trial"?T.blT:T.wT)+"40"}}>
+              <div style={{display:"flex",alignItems:"center",gap:11,flexWrap:"wrap"}}>
+                <Icon n={orgStatus==="trial"?"clock":"alert"} s={20} style={{color:orgStatus==="trial"?T.blT:T.wT}}/>
+                <div style={{flex:1,minWidth:160}}>
+                  <div style={{fontWeight:700,fontSize:13.5,color:orgStatus==="trial"?T.blT:T.wT}}>{orgStatus==="trial"?`Testphase · Tarif ${orgPlan.l}`:orgStatus==="archived"?"Dieser Betrieb ist offline":"Betrieb gesperrt"}</div>
+                  <div style={{fontSize:12,color:orgStatus==="trial"?T.blT:T.wT,marginTop:1}}>{orgStatus==="trial"?(trialDaysLeft!=null?`Noch ${Math.max(0,trialDaysLeft)} Tage – danach ist ein bezahlter Tarif nötig.`:"Alle Funktionen freigeschaltet."):"Bitte den Anbieter kontaktieren, um zu reaktivieren."}</div>
+                </div>
+              </div>
+            </div>}
+            {emps.length<=1&& <div style={{...crd,marginBottom:14,background:T.bl,borderColor:T.blT+"40"}}><h3 style={{margin:"0 0 8px",fontSize:14,color:T.blT}}>Startklar · Betriebs-ID: <span style={{fontFamily:"ui-monospace,monospace"}}>{org.code}</span></h3><p style={{margin:"0 0 12px",fontSize:13,color:T.blT}}>Mit dieser Betriebs-ID melden sich deine Mitarbeiter an.</p><button style={btn("p")} onClick={seedDemo}>Demo-Team laden</button></div>}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:11,marginBottom:14}}>
+              {[
+                ["users",emps.length,"im Team","staff",true],
+                ["inbox",pendCount,pendCount?"Offene Anfragen":"Keine Anfragen","reqs",true],
+                ["calendar",null,"Planer öffnen","sched",false],
+                ["settings",null,"Betrieb","settings",false],
+              ].map(([ic,v,l,tabKey,metric])=> (
+                <button key={l} onClick={()=>setATab(tabKey)} style={{...crd,textAlign:"left",padding:16,cursor:"pointer",display:"flex",flexDirection:"column",gap:13,alignItems:"flex-start"}}>
+                  <div style={{width:38,height:38,borderRadius:11,background:T.acc+"14",color:T.acc,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon n={ic} s={19}/></div>
+                  {metric? <div><div style={{fontSize:26,fontWeight:800,color:T.tx,lineHeight:1,fontFamily:"'Schibsted Grotesk',sans-serif"}}>{v}</div><div style={{fontSize:11.5,color:T.tx2,marginTop:5}}>{l}</div></div>
+                  : <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%"}}><div style={{fontSize:14.5,fontWeight:700,color:T.tx}}>{l}</div><span style={{color:T.tx2}}><Icon n="chevron" s={16}/></span></div>}
+                </button>
+              ))}
+            </div>
+            {(()=>{const hasPlan=!!curSc;const reqTotal=hasPlan?days*shiftDefs.reduce((s,d)=>s+d.required,0):0;let filled=0;if(hasPlan){for(let d=0;d<days;d++)shiftDefs.forEach(s=>{filled+=Math.min(cov[d]?.[s.key]||0,s.required);});}const coverage=reqTotal?Math.round(filled/reqTotal*100):0;const plannedH=hasPlan?planEmps.reduce((s,e)=>s+calcHours(curSc[e.id]||[]),0):0;const util=hasPlan&&planEmps.length?Math.round(planEmps.map(e=>{const so=targetHours(e,days);return so>0?calcHours(curSc[e.id]||[])/so:1;}).reduce((a,b)=>a+b,0)/planEmps.length*100):0;const vacDays=hasPlan?planEmps.reduce((s,e)=>s+(curSc[e.id]||[]).filter(x=>x==="U").length,0):0;const kpis=[["chart",`${coverage}%`,"Abdeckung",coverage>=95?T.okT:coverage>=80?T.wT:T.erT],["alert",gaps,"Tage mit Lücken",gaps?T.erT:T.okT],["clock",`${Math.round(plannedH)} h`,"geplant gesamt",T.tx],["users",`${util}%`,"Ø Auslastung",Math.abs(util-100)<=10?T.okT:T.wT],["plane",vacDays,"Urlaubstage",T.tx],["inbox",pendCount,"offene Anfragen",pendCount?T.wT:T.okT]];return <div style={{...crd,marginBottom:14}}><div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}><h3 style={{margin:0,fontSize:14,fontWeight:700}}>Kennzahlen</h3><span style={{fontSize:11,color:T.tx2}}>{plbl}</span></div>{!hasPlan? <p style={{color:T.tx2,fontSize:13,margin:"10px 0 0",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>Noch kein Plan für diesen Monat.<button onClick={()=>setATab("sched")} style={btn("s",true)}>Zum Planer</button></p>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:10,marginTop:13}}>{kpis.map(([ic,val,lab,col])=> <div key={lab} style={{padding:"12px 13px",background:T.bg2,borderRadius:12}}><div style={{display:"flex",alignItems:"center",gap:6,color:T.tx2,marginBottom:8}}><Icon n={ic} s={15}/><span style={{fontSize:10.5}}>{lab}</span></div><div style={{fontSize:22,fontWeight:800,color:col,fontFamily:"'Schibsted Grotesk',sans-serif",lineHeight:1}}>{val}</div></div>)}</div>}</div>;})()}
+            <div style={{...crd,marginBottom:14}}>
+              <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>Wer arbeitet heute? · {today.getDate()}. {MF[today.getMonth()]}</h3>
+              {!todTeam.length? <p style={{color:T.tx2,fontSize:13,margin:0}}>Kein Plan für heute.</p>:shiftDefs.map(def=>{const w=todTeam.filter(x=>x.sh===def.key);return (<div key={def.key} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",background:shBg(def.key),borderRadius:12,marginBottom:7,flexWrap:"wrap"}}><span style={{background:shX(def.key),color:"#fff",borderRadius:7,padding:"3px 8px",fontWeight:800,fontSize:11}}>{def.key}</span><span style={{fontSize:12,fontWeight:700,color:shC(def.key),minWidth:100}}>{def.label} {def.start}–{def.end}</span>{!w.length?<span style={{fontSize:12,color:T.erT,marginLeft:"auto",fontWeight:600}}>unbesetzt</span>: <div style={{display:"flex",gap:5,flexWrap:"wrap",marginLeft:"auto"}}>{w.map(x=> <span key={x.e.id} style={{fontSize:11,background:T.card,padding:"2px 9px",borderRadius:20,fontWeight:600}}>{x.e.name}</span>)}{w.length<def.required&& <span style={{fontSize:12,color:T.erT}}>unterbesetzt</span>}</div>}</div>);})}
+            </div>
+          </div>}
+
+          {aTab==="staff"&& <div>
+            {can("manageStaff")&& <div style={{...crd,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>Mitarbeiter anlegen</h3>{emps.length<=1&& <button style={btn("bl",true)} onClick={seedDemo}>Demo</button>}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+                <div><label style={lbl}>Name</label><input style={inp} value={nef.name} onChange={e=>setNef(p=>({...p,name:e.target.value}))}/></div>
+                <div><label style={lbl}>Login-ID</label><input style={inp} value={nef.lid} onChange={e=>setNef(p=>({...p,lid:e.target.value}))}/></div>
+                <div><label style={lbl}>PIN (≥4)</label><input style={inp} value={nef.pin} onChange={e=>setNef(p=>({...p,pin:e.target.value}))}/></div>
+                <div><label style={lbl}>Rolle</label><select style={inp} value={nef.role} onChange={e=>{const r=e.target.value;setNef(p=>({...p,role:r,inPlan:r==="staff"||r==="manager"}));}}><option value="staff">Mitarbeiter</option><option value="manager">Shopleiter</option>{isOwner&& <option value="director">Geschäftsführer</option>}</select></div>
+                <div><label style={lbl}>Stellen-% </label><input style={inp} type="number" min="10" max="100" step="5" value={nef.workPct} onChange={e=>setNef(p=>({...p,workPct:e.target.value}))}/></div>
+                <div><label style={lbl}>Präferenz</label><select style={inp} value={nef.pref} onChange={e=>setNef(p=>({...p,pref:e.target.value}))}>{PR.map(p=> <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s=> <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select></div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,padding:"9px 12px",background:T.bg2,borderRadius:10}}>
+                <input type="checkbox" id="newInPlan" checked={nef.inPlan!==false} onChange={e=>setNef(p=>({...p,inPlan:e.target.checked}))}/>
+                <label htmlFor="newInPlan" style={{fontSize:12,cursor:"pointer",flex:1}}>Bei Dienstplan-Erstellung berücksichtigen</label>
+              </div>
+              <button style={{...btn("p"),marginTop:14}} onClick={addEmp}>Anlegen</button>
+            </div>}
+            <div style={crd}>
+              <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>Team ({emps.length})</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                {emps.map(emp=>{const role=ROLES[emp.role||"staff"];const inP=emp.inPlan!==false;return (<div key={emp.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",background:T.bg2,borderRadius:12,flexWrap:"wrap"}}><Avatar emp={emp} size={38}/><div style={{flex:1,minWidth:90}}><div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{emp.name}{emp.id===me.id&& <span style={{fontSize:9,color:T.tx2}}>(du)</span>}<span style={{fontSize:9.5,background:role.col+"1f",color:role.col,borderRadius:20,padding:"2px 8px",fontWeight:700}}>{role.l}</span><span style={{fontSize:10,color:T.tx2}}>{emp.workPct||100}%</span><span style={{fontSize:9.5,fontWeight:700,borderRadius:20,padding:"2px 8px",display:"inline-flex",alignItems:"center",gap:4,background:inP?T.ok:T.bg3,color:inP?T.okT:T.tx2}}><Icon n="calendar" s={11}/>{inP?"im Plan":"nicht im Plan"}</span></div><div style={{fontSize:12,color:T.tx2,marginTop:1}}>{emp.lid}</div></div>{can("manageStaff")&& <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><button style={{...btn(inP?"bl":"s",true),padding:"7px 9px"}} onClick={()=>toggleInPlan(emp)} title={inP?"Aus Dienstplan nehmen":"In Dienstplan aufnehmen"}><Icon n="calendar" s={14}/></button><button style={btn("s",true)} onClick={()=>{setEditE(emp);setEf({name:emp.name,lid:emp.lid,pref:emp.pref,role:emp.role||"staff",workPct:emp.workPct||100,inPlan:emp.inPlan!==false});}}><Icon n="pencil" s={14}/></button>{can("resetPins")&& <button style={btn("w",true)} onClick={()=>setRstE(emp)}><Icon n="key" s={14}/></button>}{emp.role!=="owner"&& <button style={btn("er",true)} onClick={()=>delEmp(emp)}><Icon n="trash" s={14}/></button>}</div>}</div>);})}
+              </div>
+            </div>
+          </div>}
+
+          {aTab==="reqs"&& <div>
+            <div style={{...crd,marginBottom:12}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[["pending",`⏳ Offen (${reqList.filter(r=>r.status==="pending").length})`],["ok",`✓ Genehmigt (${reqList.filter(r=>r.status==="ok").length})`],["no",`✗ Abgelehnt (${reqList.filter(r=>r.status==="no").length})`],["all","Alle (Archiv)"]].map(([k,l])=> <button key={k} style={btn(reqFilter===k?"p":"s",true)} onClick={()=>setReqFilter(k)}>{l}</button>)}
+              </div>
+            </div>
+            <div style={crd}>
+              <h3 style={{margin:"0 0 14px",fontSize:15,fontWeight:700}}>{reqFilter==="pending"?"Offene Anfragen":reqFilter==="ok"?"Genehmigt":reqFilter==="no"?"Abgelehnt":"Archiv"}</h3>
+              {!filteredReqs.length&& <p style={{color:T.tx2,textAlign:"center",padding:"24px 0",margin:0,fontSize:13}}>Keine Einträge.</p>}
+              <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                {[...filteredReqs].reverse().map(r=>{const emp=emps.find(e=>e.id===r.uid);const tL={sick:"Krankmeldung",vac:"Urlaub",swap:"Tausch"};const sL={pending:[T.w,T.wT,"⏳ Offen"],ok:[T.ok,T.okT,"✓ Genehmigt"],no:[T.er,T.erT,"✗ Abgelehnt"]};const[bg,col,ic]=sL[r.status]||sL.pending;const canDec=(r.type==="vac"&&can("approveVac"))||(r.type==="sick"&&can("approveSick"))||(r.type==="swap"&&can("approveSwap"));return (
+                  <div key={r.id} style={{padding:"12px 14px",background:T.bg2,borderRadius:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:14}}>{emp?.name||"?"}</span><span style={{fontSize:12,color:T.tx2}}>{tL[r.type]}</span><span style={{background:bg,color:col,borderRadius:20,padding:"2px 9px",fontSize:10,fontWeight:700,marginLeft:"auto"}}>{ic}</span></div>
+                    <div style={{fontSize:12,color:T.tx2,marginBottom:6}}>{r.type==="sick"&&(r.fromDate&&r.toDate&&r.fromDate!==r.toDate?`${r.fromDate} bis ${r.toDate} (${r.dates?.length} Tage)`:r.fromDate||r.date)}{r.type==="vac"&&`${r.dates?.length} Tage: ${r.dates?.slice(0,3).join(", ")}${r.dates?.length>3?"…":""}`}{r.type==="swap"&&`${r.date} ↔ ${emps.find(e=>e.id===r.toId)?.name} am ${r.toDate}`}{r.note&&` · "${r.note}"`}</div>
+                    {r.decisionNote&& <div style={{fontSize:12,padding:"5px 9px",background:T.bg,borderRadius:8,marginBottom:6,color:T.tx2}}><strong>Entscheidungsnotiz:</strong> {r.decisionNote}</div>}
+                    {r.status==="pending"&&canDec&& <div style={{display:"flex",gap:7}}><button style={btn("ok",true)} onClick={()=>{setEditReq({req:r});setDecNote("");}}>✓ Mit Notiz entscheiden</button><button style={btn("er",true)} onClick={()=>handleReq(r.id,"no","")}>✗ Schnell ablehnen</button></div>}
+                    {r.status==="pending"&&!canDec&& <div style={{fontSize:11,color:T.tx2,fontStyle:"italic"}}>Keine Berechtigung zum Entscheiden.</div>}
+                  </div>
+                );})}
+              </div>
+            </div>
+          </div>}
+
+          {aTab==="sched"&& <div>
+            <div style={{...crd,marginBottom:12}}>
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <div><label style={lbl}>Monat</label><input type="month" value={planMo} onChange={e=>{setPlanMo(e.target.value);setEditMode(false);setDraft(null);}} style={{...inp,width:"auto"}}/></div>
+                <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:`1px solid ${T.bord2}`}}>{[["day","Tag"],["week","Woche"],["month","Monat"]].map(([k,l])=> <button key={k} onClick={()=>setPlanView(k)} style={{padding:"9px 14px",border:"none",background:planView===k?T.invBg:T.bg,color:planView===k?T.inv:T.tx,fontWeight:600,fontSize:12,cursor:"pointer"}}>{l}</button>)}</div>
+                {planView!=="month"&& <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} style={{...inp,width:"auto"}}/>}
+                {can("createPlan")&& <button style={{...btn(genLoad?"s":"p"),minWidth:170}} onClick={generate} disabled={genLoad}>{genLoad?"Rechne…":<><Icon n="sparkle" s={15}/>Automatisch erstellen</>}</button>}
+                {can("createPlan")&&!baseSc&& <button style={btn("bl")} onClick={createEmptyPlan}><Icon n="pencil" s={15}/>Leer & selbst erstellen</button>}
+                {baseSc&&!editMode&&can("createPlan")&& <button style={btn("w")} onClick={()=>{setDraft(JSON.parse(JSON.stringify(scheds[planMo])));setPaint(shiftDefs[0]?.key||"-");setEditMode(true);}}><Icon n="pencil" s={15}/>Bearbeiten</button>}
+                {editMode&& <><button style={btn("ok")} onClick={publishDraft}><Icon n="check" s={15}/>Veröffentlichen</button><button style={btn("s")} onClick={()=>{setEditMode(false);setDraft(null);}}>Abbrechen</button></>}
+                {baseSc&&!editMode&& <><button style={btn("s")} onClick={printPlan}><Icon n="printer" s={15}/>Drucken</button><button style={btn("s")} onClick={exportCSV}><Icon n="download" s={15}/>CSV</button>{orgPlan.exportF&& <button style={btn("bl")} onClick={exportPayroll}><Icon n="download" s={15}/>Lohn-Export</button>}</>}
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:T.tx2,fontWeight:600}}></span>
+                <select value={filterEmp} onChange={e=>setFilterEmp(e.target.value)} style={{...inp,width:"auto",padding:"6px 10px",fontSize:12}}><option value="all">Alle</option>{emps.map(e=> <option key={e.id} value={e.id}>{e.name}</option>)}</select>
+                <select value={filterShift} onChange={e=>setFilterShift(e.target.value)} style={{...inp,width:"auto",padding:"6px 10px",fontSize:12}}><option value="all">Alle Schichten</option>{shiftDefs.map(s=> <option key={s.key} value={s.key}>Nur {s.label}</option>)}<option value="U">Nur Urlaub</option><option value="K">Nur Krank</option></select>
+              </div>
+              {curSc&&!editMode&&gaps>0&& <div style={{marginTop:10,padding:"8px 13px",background:T.er,borderRadius:10,fontSize:12,color:T.erT,fontWeight:600}}>{gaps} Tag(e) unterbesetzt.</div>}
+              {editMode&& <div style={{marginTop:10,padding:"10px 13px",background:T.bg2,borderRadius:10}}><div style={{fontSize:12,color:T.tx2,marginBottom:7,fontWeight:600}}>Pinsel <span style={{fontWeight:400}}>· antippen zum Malen · Schicht gedrückt halten und ziehen, um sie zu verschieben</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{paintKeys().map(k=> <button key={k} onClick={()=>setPaint(k)} style={{padding:"6px 14px",borderRadius:8,border:paint===k?`2px solid ${shX(k)}`:`1px solid ${T.bord2}`,background:shBg(k),color:shC(k),fontWeight:700,fontSize:12,cursor:"pointer"}}>{getShiftInfo(k).label}</button>)}</div></div>}
+              {curSc&& <div style={{marginTop:10,padding:"11px 13px",background:arbzg.length?(arbzgErr?T.er:T.w):T.ok,borderRadius:10,border:`1px solid ${(arbzg.length?(arbzgErr?T.erT:T.wT):T.okT)}33`}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,fontSize:12.5,color:arbzg.length?(arbzgErr?T.erT:T.wT):T.okT}}><Icon n={arbzg.length?"alert":"shield"} s={15}/>Compliance-Wächter (ArbZG): {arbzg.length?`${arbzg.length} Hinweis${arbzg.length>1?"e":""}${arbzgErr?` · davon ${arbzgErr} kritisch`:""}`:"keine Verstöße erkannt"}</div>
+                {arbzg.length>0&& <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:4}}>{arbzg.slice(0,6).map((i,ix)=> <div key={ix} style={{fontSize:11.5,color:i.sev==="er"?T.erT:T.wT}}>• {i.name}, {i.day+1}. — {i.msg}</div>)}{arbzg.length>6&& <div style={{fontSize:11,color:T.tx2}}>… und {arbzg.length-6} weitere (rot markierte Zellen im Plan)</div>}</div>}
+              </div>}
+            </div>
+
+            {!curSc&& <div style={{...crd,textAlign:"center",padding:44}}><div style={{fontSize:32}}></div><p style={{color:T.tx2,margin:"10px 0 0",fontSize:13}}>Kein Plan für {plbl}.</p></div>}
+
+            {curSc&&planView==="day"&& <div style={crd}>
+              <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700}}>{DW[pdate.getDay()]}, {pdate.getDate()}. {MF[pdate.getMonth()]} {pdate.getFullYear()}</h3>
+              {pdate.getMonth()!==m0||pdate.getFullYear()!==y? <p style={{color:T.tx2,fontSize:12,margin:0}}>Tag außerhalb des Planungsmonats.</p>:[...shiftDefs.map(s=>s.key),"U","K"].map(sh=>{if(filterShift!=="all"&&filterShift!==sh)return null;const d=pdate.getDate()-1;const ppl=filteredEmps.filter(e=>(curSc[e.id]||[])[d]===sh);const info=getShiftInfo(sh);if(!ppl.length&&!isShift(sh))return null;if(!ppl.length){return (<div key={sh} style={{padding:"10px 13px",background:T.er,borderRadius:10,marginBottom:6,fontSize:12,color:T.erT,fontWeight:600}}>{info.label} unbesetzt!</div>);}return (<div key={sh} style={{padding:"12px 14px",background:shBg(sh),borderRadius:12,marginBottom:8}}><div style={{fontWeight:700,color:shC(sh),fontSize:13,marginBottom:8}}>{info.label} {info.start&&`${info.start}–${info.end}`}</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{ppl.map(e=> <div key={e.id} style={{padding:"5px 12px",background:T.card,borderRadius:20,fontSize:12,fontWeight:600}}>{e.name}</div>)}</div></div>);})}
+            </div>}
+
+            {curSc&&planView==="week"&& <div style={{...crd,overflowX:"auto"}}>
+              <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>Woche ab {viewDays[0]?.toLocaleDateString("de-DE")}</h3>
+              <table style={{borderCollapse:"collapse",fontSize:11,width:"100%"}}><thead><tr><th style={{padding:"8px 10px",background:T.invBg,color:T.inv,textAlign:"left",minWidth:120}}>Mitarbeiter</th>{viewDays.map(d=> <th key={d.toISOString()} style={{padding:"8px",background:T.invBg,color:T.inv,minWidth:90,textAlign:"center"}}>{DW[d.getDay()]}<br/><span style={{fontSize:10,opacity:.7}}>{d.getDate()}.{d.getMonth()+1}</span></th>)}</tr></thead><tbody>
+                {filteredEmps.map((emp,ri)=>{const bg=ri%2?T.bg2:T.card;return (<tr key={emp.id}><td style={{padding:"7px 10px",fontWeight:600,background:bg,borderRight:`1px solid ${T.bord}`,fontSize:12}}>{emp.name}</td>{viewDays.map(d=>{const inM=d.getMonth()===m0&&d.getFullYear()===y;const dayIdx=inM?d.getDate()-1:null;const sh=inM?(curSc[emp.id]||[])[dayIdx]:"-";const dim=filterShift!=="all"&&filterShift!==sh;const info=getShiftInfo(sh);const isAbs=sh==="U"||sh==="K";const grabbable=editMode&&isShift(sh)&&dayIdx!=null;const dragging=dragSh&&dragSh.empId===emp.id&&dragSh.day===dayIdx;return (<td key={d.toISOString()} style={{padding:"3px",background:bg,textAlign:"center",opacity:dim?.3:1}}><div draggable={grabbable} onDragStart={grabbable?e=>{setDragSh({empId:emp.id,day:dayIdx,key:sh});e.dataTransfer.effectAllowed="move";}:undefined} onDragEnd={()=>setDragSh(null)} onDragOver={editMode&&dayIdx!=null?e=>e.preventDefault():undefined} onDrop={editMode&&dayIdx!=null?e=>{e.preventDefault();if(!dragSh)return;if(isAbs){flash("er","Urlaub/Krank lässt sich nicht überschreiben");setDragSh(null);return;}moveShift(dragSh.empId,dragSh.day,emp.id,dayIdx);}:undefined} onClick={editMode&&dayIdx!=null?()=>paintCell(emp.id,dayIdx):undefined} style={{padding:"7px 6px",borderRadius:7,background:shBg(sh),color:shC(sh),fontSize:11,fontWeight:700,cursor:editMode&&dayIdx!=null?(grabbable?"grab":"pointer"):"default",opacity:dragging?.35:1,outline:editMode&&dragSh&&!dragging&&!isAbs&&dayIdx!=null?`1px dashed ${T.acc}`:"none"}}>{sh==="-"?"–":sh}{info.start&& <div style={{fontSize:8,fontWeight:400,marginTop:2}}>{info.start}–{info.end}</div>}</div></td>);})}</tr>);})}
+              </tbody></table>
+            </div>}
+
+            {curSc&&planView==="month"&& <div style={{...crd,overflowX:"auto"}}>
+              <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}><h3 style={{margin:0,fontSize:14,fontWeight:700}}>{plbl}</h3><div style={{display:"flex",gap:7,marginLeft:"auto",flexWrap:"wrap"}}>{[...shiftDefs.map(s=>s.key),"U","K"].map(k=> <span key={k} style={{fontSize:10,display:"flex",alignItems:"center",gap:3,color:T.tx2}}><span style={{background:shX(k),color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:700,fontSize:9}}>{k}</span>{getShiftInfo(k).label}</span>)}</div></div>
+              <table style={{borderCollapse:"collapse",fontSize:10}}><thead><tr><th style={{padding:"7px 11px",background:T.invBg,color:T.inv,textAlign:"left",position:"sticky",left:0,zIndex:2,minWidth:130,whiteSpace:"nowrap",borderRadius:"7px 0 0 0"}}>Team</th>{Array.from({length:days},(_,i)=>{const dow=new Date(y,m0,i+1).getDay(),we=dow===0||dow===6;return (<th key={i} style={{padding:"3px 0",background:we?T.acc:T.invBg,color:T.inv,minWidth:22,textAlign:"center"}}><div style={{fontSize:7,opacity:.7}}>{DW[dow]}</div><div style={{fontSize:9}}>{i+1}</div></th>);})}<th style={{padding:"7px",background:T.invBg,color:T.inv,textAlign:"center"}}>Σ</th></tr></thead>
+                <tbody>
+                  {filteredEmps.map((emp,ri)=>{const row=curSc[emp.id]||Array(days).fill("-"),tot=row.filter(s=>isShift(s)).length,bg=ri%2?T.bg2:T.card;return (
+                    <tr key={emp.id}><td style={{padding:"4px 11px",fontWeight:600,position:"sticky",left:0,background:bg,borderRight:`1px solid ${T.bord}`,fontSize:11,whiteSpace:"nowrap",color:T.tx}}>{emp.name} <span style={{fontSize:9,color:T.tx2,fontWeight:400}}>{emp.workPct||100}%</span></td>{row.map((sh,d)=>{const dim2=filterShift!=="all"&&filterShift!==sh;const dragging=dragSh&&dragSh.empId===emp.id&&dragSh.day===d;const isAbs=sh==="U"||sh==="K";const grabbable=editMode&&isShift(sh);return (<td key={d} style={{padding:"1px",textAlign:"center",background:bg,opacity:dim2?.2:1}}><div draggable={grabbable} onDragStart={grabbable?e=>{setDragSh({empId:emp.id,day:d,key:sh});e.dataTransfer.effectAllowed="move";}:undefined} onDragEnd={()=>setDragSh(null)} onDragOver={editMode?e=>e.preventDefault():undefined} onDrop={editMode?e=>{e.preventDefault();if(!dragSh)return;if(isAbs){flash("er","Tag mit Urlaub/Krank lässt sich nicht überschreiben");setDragSh(null);return;}moveShift(dragSh.empId,dragSh.day,emp.id,d);}:undefined} onClick={editMode?()=>paintCell(emp.id,d):undefined} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",background:shBg(sh),color:shC(sh),borderRadius:5,width:20,height:18,fontWeight:700,fontSize:9,cursor:editMode?(grabbable?"grab":"pointer"):"default",opacity:dragging?.35:1,outline:arbzgSet.has(emp.id+":"+d)?`2px solid ${T.erT}`:(editMode&&dragSh&&!dragging&&!isAbs?`1px dashed ${T.acc}`:"none")}}>{sh==="-"?"":sh}</div></td>);})}<td style={{padding:"4px 7px",textAlign:"center",fontWeight:700,background:bg,fontSize:11,color:T.tx}}>{tot}</td></tr>
+                  );})}
+                  {shiftDefs.map((def,ri)=>(
+                    <tr key={def.key} style={{borderTop:`1px solid ${T.bord}`}}><td style={{padding:"3px 11px",fontSize:9,fontWeight:700,color:shC(def.key),position:"sticky",left:0,background:T.bg2,borderRight:`1px solid ${T.bord}`}}>{def.key}·Soll{def.required}</td>{Array.from({length:days},(_,d)=>{const c=cov[d]?.[def.key]||0;return (<td key={d} style={{padding:"1px",textAlign:"center",background:T.bg2}}><div style={{display:"inline-block",background:c>=def.required?T.ok:T.er,color:c>=def.required?T.okT:T.erT,borderRadius:4,width:20,lineHeight:"15px",fontWeight:700,fontSize:9}}>{c}</div></td>);})}<td style={{background:T.bg2}}/></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>}
+
+            {curSc&& <div style={{...crd,marginTop:12}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                <h3 style={{margin:0,fontSize:14,fontWeight:700}}>Stundenkonto · {plbl}</h3>
+                <span style={{fontSize:11,color:T.tx2}}>Ist (geplante Schichtstunden) vs. Soll ({weekStdHours} h/Woche, anteilig)</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {filteredEmps.map(emp=>{
+                  const row=curSc[emp.id]||Array(days).fill("-");
+                  const ist=calcHours(row),soll=targetHours(emp,days),delta=ist-soll;
+                  const tol=Math.max(4,soll*0.05);
+                  const st=Math.abs(delta)<=tol?"ok":delta<0?"under":"over";
+                  const[sBg,sTx]={ok:[T.ok,T.okT],under:[T.w,T.wT],over:[T.bl,T.blT]}[st];
+                  const pct=soll>0?Math.min(ist/soll,1.3)/1.3*100:0;
+                  const sollMark=1/1.3*100;
+                  const uD=row.filter(s=>s==="U").length,kD=row.filter(s=>s==="K").length;
+                  return (<div key={emp.id} style={{padding:"10px 12px",background:T.bg2,borderRadius:11}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7,flexWrap:"wrap"}}>
+                      <span style={{fontWeight:700,fontSize:13}}>{emp.name}</span>
+                      <span style={{fontSize:10,color:T.tx2}}>{emp.workPct||100}%</span>
+                      {uD>0&& <span style={{fontSize:10,background:shBg("U"),color:shC("U"),borderRadius:20,padding:"1px 7px",fontWeight:600}}>{uD}× U</span>}
+                      {kD>0&& <span style={{fontSize:10,background:shBg("K"),color:shC("K"),borderRadius:20,padding:"1px 7px",fontWeight:600}}>{kD}× K</span>}
+                      <span style={{marginLeft:"auto",fontSize:12,fontWeight:700}}>{fmtH(ist)} <span style={{color:T.tx2,fontWeight:400}}>/ {fmtH(soll)}</span></span>
+                      <span style={{fontSize:11,fontWeight:700,background:sBg,color:sTx,borderRadius:20,padding:"2px 10px",minWidth:54,textAlign:"center"}}>{delta>=0?"+":"−"}{fmtH(Math.abs(delta))}</span>
+                    </div>
+                    <div style={{height:7,background:T.bg3,borderRadius:5,position:"relative",overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:sTx,borderRadius:5,transition:"width .3s"}}/>
+                      <div style={{position:"absolute",left:`${sollMark}%`,top:-1,bottom:-1,width:2,background:T.tx2,opacity:.45}}/>
+                    </div>
+                  </div>);
+                })}
+              </div>
+              <div style={{marginTop:10,fontSize:10,color:T.tx2}}>Die Markierung kennzeichnet das Soll (100%). Urlaub und Krank zählen nicht als geleistete Stunden. <span style={{color:T.wT}}>Gelb</span> = unter Soll · <span style={{color:T.okT}}>Grün</span> = im Soll · <span style={{color:T.blT}}>Blau</span> = über Soll (Mehrstunden).</div>
+            </div>}
+          </div>}
+
+          {aTab==="settings"&& <div>
+            {!isOwner&&!can("manageOrg")&&!can("manageShifts")&& <div style={{...crd,textAlign:"center",padding:32}}><div style={{color:T.tx2,display:"flex",justifyContent:"center"}}><Icon n="lock" s={26}/></div><p style={{color:T.tx2,margin:"10px 0 0",fontSize:13}}>Du hast keine Berechtigung für Betriebseinstellungen.</p><p style={{color:T.tx2,margin:"4px 0 0",fontSize:11}}>Nur Inhaber und Berechtigte können hier Änderungen vornehmen.</p></div>}
+
+            {(isOwner||can("manageOrg"))&& <div style={{...crd,marginBottom:12}}>
+              <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>Betriebsdaten</h3>
+              <label style={lbl}>Name</label><input style={inp} value={orgEd?.name??org.name} onChange={e=>setOrgEd(p=>({...(p||{name:org.name,sub:org.sub,weekStdHours:org.weekStdHours||40}),name:e.target.value}))}/>
+              <label style={lbl}>Untertitel</label><input style={inp} value={orgEd?.sub??org.sub} onChange={e=>setOrgEd(p=>({...(p||{name:org.name,sub:org.sub,weekStdHours:org.weekStdHours||40}),sub:e.target.value}))}/>
+              <label style={lbl}>Standard-Wochenstunden (Vollzeit)</label><input style={inp} type="number" min="20" max="48" value={orgEd?.weekStdHours??weekStdHours} onChange={e=>setOrgEd(p=>({...(p||{name:org.name,sub:org.sub,weekStdHours:org.weekStdHours||40}),weekStdHours:Number(e.target.value)||40}))}/>
+              {orgEd&& <button style={{...btn("p"),marginTop:14}} onClick={saveOrgEdits}><Icon n="check" s={15}/>Speichern</button>}
+              <label style={lbl}>Akzentfarbe (Markenfarbe des Betriebs)</label>
+              <div style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:2}}>
+                {ACCENTS.map(c=>{const active=(org.accent||"#4f46e5")===c;return <button key={c} onClick={()=>setAccent(c)} title={c} style={{width:32,height:32,borderRadius:9,background:c,cursor:"pointer",border:active?`2.5px solid ${T.tx}`:`1px solid ${T.bord2}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{active&&<Icon n="check" s={15} style={{color:"#fff"}}/>}</button>;})}
+              </div>
+              <p style={{fontSize:10.5,color:T.tx2,margin:"6px 0 0"}}>Wirkt sofort auf Buttons, Logo und aktive Elemente – pro Betrieb individuell.</p>
+              <div style={{marginTop:14,padding:"11px 13px",background:T.bg2,borderRadius:10,fontSize:12,color:T.tx2,display:"flex",alignItems:"center",gap:8}}><Icon n="building" s={15}/><span>Betriebs-ID für Logins: <strong style={{fontFamily:"ui-monospace,monospace",color:T.acc,letterSpacing:1.5}}>{org.code}</strong></span></div>
+            </div>}
+
+            {isOwner&& <div style={{...crd,marginBottom:12}}>
+              <h3 style={{margin:"0 0 3px",fontSize:15,fontWeight:700}}>Abo & Betrieb</h3>
+              <p style={{margin:"0 0 14px",fontSize:12,color:T.tx2}}>Tarif und Status werden vom Anbieter verwaltet.</p>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+                <div style={{flex:1,minWidth:130,padding:"12px 13px",background:T.bg2,borderRadius:12}}>
+                  <div style={{fontSize:11,color:T.tx2,marginBottom:5}}>Aktueller Tarif</div>
+                  <div style={{fontSize:16,fontWeight:800,fontFamily:"'Schibsted Grotesk',sans-serif"}}>{orgPlan.l}</div>
+                  <div style={{fontSize:11,color:T.tx2,marginTop:2}}>{orgPlan.price}</div>
+                </div>
+                <div style={{flex:1,minWidth:130,padding:"12px 13px",background:T.bg2,borderRadius:12}}>
+                  <div style={{fontSize:11,color:T.tx2,marginBottom:5}}>Status</div>
+                  <div style={{fontSize:16,fontWeight:800,color:(STATUS[orgStatus]||STATUS.active).col,fontFamily:"'Schibsted Grotesk',sans-serif"}}>{(STATUS[orgStatus]||STATUS.active).l}</div>
+                  {orgStatus==="trial"&&trialDaysLeft!=null&& <div style={{fontSize:11,color:T.tx2,marginTop:2}}>noch {Math.max(0,trialDaysLeft)} Tage</div>}
+                </div>
+              </div>
+              <div style={{fontSize:11,color:T.tx2,marginBottom:6,display:"flex",justifyContent:"space-between"}}><span>Sitzplätze (Mitarbeiter)</span><span style={{fontWeight:700,color:seatFull?T.erT:T.tx}}>{seatUsed} / {seatLimit===Infinity?"∞":seatLimit}</span></div>
+              <div style={{height:7,background:T.bg3,borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${seatLimit===Infinity?Math.min(seatUsed,50)/50*100:Math.min(seatUsed/seatLimit*100,100)}%`,background:seatFull?T.erT:T.acc,borderRadius:5}}/></div>
+              {seatFull&& <p style={{fontSize:11,color:T.erT,margin:"6px 0 0"}}>Limit erreicht – für mehr Mitarbeiter beim Anbieter ein Upgrade anfragen.</p>}
+              <div style={{borderTop:`1px solid ${T.bord}`,marginTop:16,paddingTop:14}}>
+                {orgStatus!=="archived"
+                  ? <button style={btn("w")} onClick={async()=>{if(!confirm("Betrieb offline nehmen? Mitarbeiter können sich dann nicht mehr anmelden. Du kannst jederzeit reaktivieren."))return;await setOrgStatus(orgId,"archived");flash("ok","Betrieb offline genommen");}}><Icon n="lock" s={15}/>Betrieb offline nehmen</button>
+                  : <button style={btn("ok")} onClick={async()=>{await setOrgStatus(orgId,"active");flash("ok","Betrieb wieder aktiv");}}><Icon n="check" s={15}/>Betrieb reaktivieren</button>}
+                <p style={{fontSize:10.5,color:T.tx2,margin:"8px 0 0"}}>Offline = pausiert: Daten bleiben erhalten, nur die Anmeldung ist gesperrt. Du als Inhaber kommst weiterhin rein.</p>
+              </div>
+            </div>}
+
+            {(isOwner||can("manageShifts"))&& <div style={{...crd,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}><h3 style={{margin:0,fontSize:15,fontWeight:700}}>⏰ Schichtmodelle ({shiftDefs.length})</h3><button style={btn("p",true)} onClick={()=>setEditShift({label:"",key:"",start:"06:00",end:"14:00",required:1,colorIdx:shiftDefs.length%5})}>+ Neue Schicht</button></div>
+              {!shiftDefs.length&& <p style={{color:T.tx2,fontSize:13,textAlign:"center",padding:"16px 0",margin:0}}>Noch keine Schichten definiert. Klicke „+ Neue Schicht".</p>}
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                {shiftDefs.map((s,i)=> <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",background:T.bg2,borderRadius:12,flexWrap:"wrap"}}>
+                  <div style={{padding:"4px 10px",background:shBg(s.key),color:shC(s.key),borderRadius:8,fontWeight:700,fontSize:13}}>{s.key}</div>
+                  <div style={{flex:1,minWidth:120}}><div style={{fontWeight:700,fontSize:13}}>{s.label}</div><div style={{fontSize:11,color:T.tx2}}>{s.start}–{s.end} · {hoursOf(s.start,s.end)}h · Min. {s.required} MA</div></div>
+                  <button style={btn("s",true)} onClick={()=>setEditShift({...s,idx:i})}></button>
+                  <button style={btn("er",true)} onClick={()=>delShift(i)}></button>
+                </div>)}
+              </div>
+            </div>}
+
+            {(isOwner||can("manageOrg"))&& <div style={{...crd,marginBottom:12}}>
+              <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>Wunschfrei-Sperrtage</h3>
+              <p style={{fontSize:12,color:T.tx2,margin:"0 0 12px"}}>An diesen Tagen können Mitarbeiter keine Wunschfrei beantragen (z. B. Silvester, Brückentage).</p>
+              <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+                <input type="date" value={holidayDate} onChange={e=>setHolidayDate(e.target.value)} style={{...inp,width:"auto"}}/>
+                <input placeholder="Bezeichnung" value={holidayName} onChange={e=>setHolidayName(e.target.value)} style={{...inp,flex:1,minWidth:140}}/>
+                <button style={btn("p",true)} onClick={addHoliday}>+ Hinzufügen</button>
+              </div>
+              {!holidays.length? <p style={{color:T.tx2,fontSize:12,margin:0}}>Keine Sperrtage definiert.</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>{holidays.map((h,i)=> <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg2,borderRadius:10}}><span style={{fontWeight:600,fontSize:12,minWidth:90}}>{h.date}</span><span style={{flex:1,fontSize:12}}>{h.name}</span><button style={btn("er",true)} onClick={()=>delHoliday(i)}></button></div>)}</div>}
+            </div>}
+
+            {isOwner&& <div style={crd}>
+              <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>Berechtigungen pro Rolle</h3>
+              <p style={{fontSize:12,color:T.tx2,margin:"0 0 12px"}}>Lege fest, welche Rolle welche Aktion ausführen darf. Inhaber kann immer alles.</p>
+              <div style={{overflowX:"auto"}}>
+                <table style={{borderCollapse:"collapse",fontSize:12,width:"100%"}}>
+                  <thead><tr><th style={{padding:"8px 10px",textAlign:"left",background:T.bg2}}>Berechtigung</th>{["director","manager","staff"].map(r=> <th key={r} style={{padding:"8px",background:T.bg2,textAlign:"center"}}>{ROLES[r].l}</th>)}</tr></thead>
+                  <tbody>
+                    {Object.entries(PERMS).map(([k,l])=> <tr key={k} style={{borderTop:`1px solid ${T.bord}`}}><td style={{padding:"8px 10px"}}>{l}</td>{["director","manager","staff"].map(r=> <td key={r} style={{padding:"8px",textAlign:"center"}}><input type="checkbox" checked={!!(permsByRole[r]||DEFAULT_PERMS[r])[k]} onChange={e=>setPerm(r,k,e.target.checked)}/></td>)}</tr>)}
+                  </tbody>
+                </table>
+              </div>
+            </div>}
+          </div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ═══ EMPLOYEE ═══
+  if(view==="emp"&&me&&org){
+    const myRqs=reqList.filter(r=>r.uid===me.id);
+    const myPlanCur=scheds[cm]?.[me.id]||null;
+    const myPlanNxt=scheds[nm]?.[me.id]||null;
+    const upcoming=[];
+    [[myPlanCur,cy,cm0],[myPlanNxt,ny,nm0]].forEach(([sc,yy,mm0])=>{if(!sc)return;sc.forEach((sh,i)=>{if(shiftDefs.some(s=>s.key===sh)){const d=new Date(yy,mm0,i+1);if(d>=today)upcoming.push({d,sh,day:i+1,mo:mm0});}});});
+    upcoming.sort((a,b)=>a.d-b.d);
+
+    const MiniCal=(sc,y,m0)=>{if(!sc)return <p style={{color:T.tx2,fontSize:13,textAlign:"center",padding:"24px 0",margin:0}}>Noch kein Plan veröffentlicht.</p>;const ts=today.toDateString(),sd=new Date(y,m0,1).getDay();return (<><div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><button style={btn("bl",true)} onClick={()=>doICS(sc,me.name,y,m0,shiftDefs)}>In Kalender</button></div><div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:10}}>{DW.map(d=> <div key={d} style={{textAlign:"center",fontSize:9,color:T.tx2,fontWeight:600,padding:"3px 0"}}>{d}</div>)}{Array.from({length:sd},(_,i)=> <div key={`s${i}`}/>)}{sc.map((sh,i)=>{const iT=new Date(y,m0,i+1).toDateString()===ts;return (<div key={i} style={{aspectRatio:"1",borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:shBg(sh),border:iT?`2px solid ${shX(sh)}`:"1px solid transparent",boxSizing:"border-box"}}><div style={{fontSize:8,color:T.tx2}}>{i+1}</div><div style={{fontWeight:800,fontSize:11,color:shC(sh)}}>{sh==="-"?"":sh}</div></div>);})}</div></>);};
+
+    // Wochenansicht für Mitarbeiter
+    const empWeek=()=>{const t=today;const s=new Date(t);s.setDate(t.getDate()-((t.getDay()+6)%7));return Array.from({length:7},(_,i)=>{const d=new Date(s);d.setDate(s.getDate()+i);return d;});};
+
+    return (
+      <div style={{minHeight:"100vh",background:T.bg,color:T.tx}}>
+        {Tst}
+        {NotifPanel}
+        {Header(<span style={{display:"inline-flex",alignItems:"center",gap:9}}><Avatar emp={me} size={30}/>{me.name}</span>,`${org.name.toUpperCase()} · ${org.code}`,<>{DarkBtn}{NotifBell}{wasSuper&& <button style={{...btn("pu",true),padding:"7px 10px"}} onClick={()=>{setIsSuper(true);setWasSuper(false);setOrgId(null);setMe(null);setView("super");}} title="Anbieter-Konsole"><Icon n="shield"/></button>}{canManage&& <button style={{...btn("bl",true),padding:"7px 10px"}} onClick={()=>{setView("admin");setATab("dash");}} title="Verwaltung"><Icon n="lock"/></button>}<button style={{...btn("s",true),padding:"7px 10px"}} onClick={logout} title="Abmelden"><Icon n="logout"/></button></>)}
+        {TabBar([["home","Start","home"],["plan","Plan","calendar"],["reqs","Anfragen","inbox"],["profile","Profil","user"]],eTab,setETab)}
+        <div style={{padding:16,maxWidth:540,margin:"0 auto"}}>
+
+          {eTab==="home"&& <div>
+            <div style={{...crd,marginBottom:12,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:150}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,fontWeight:700,fontSize:14}}><Icon n="clock" s={16}/>Stempeluhr</div>
+                <div style={{fontSize:12,color:T.tx2,marginTop:3}}>{myStamp?.in&&!myStamp?.out?<>Eingestempelt seit <strong style={{color:T.okT}}>{new Date(myStamp.in).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}</strong> Uhr</>:myStamp?.out?<>Heute erfasst: <strong>{((myStamp.out-myStamp.in)/36e5).toFixed(1).replace(".",",")} h</strong> ({new Date(myStamp.in).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}–{new Date(myStamp.out).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})})</>:"Noch nicht eingestempelt."}</div>
+              </div>
+              {(!myStamp||myStamp.out)
+                ? <button style={btn("p")} onClick={doClock} disabled={!!myStamp?.out} title={myStamp?.out?"Heute bereits ausgestempelt":""}><Icon n="clock" s={15}/>{myStamp?.out?"Erfasst":"Einstempeln"}</button>
+                : <button style={btn("er")} onClick={doClock}><Icon n="clock" s={15}/>Ausstempeln</button>}
+            </div>
+            <div style={{...crd,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:6,flexWrap:"wrap"}}>
+                <h3 style={{margin:0,fontSize:14,fontWeight:700}}>Nächste Schichten</h3>
+                <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:`1px solid ${T.bord2}`}}>{[["list","Liste"],["week","Woche"],["month","Monat"]].map(([k,l])=> <button key={k} onClick={()=>setEmpPlanView(k)} style={{padding:"5px 10px",border:"none",background:empPlanView===k?T.invBg:T.bg,color:empPlanView===k?T.inv:T.tx,fontWeight:600,fontSize:11,cursor:"pointer"}}>{l}</button>)}</div>
+              </div>
+              {empPlanView==="list"&&(!upcoming.length? <p style={{color:T.tx2,fontSize:13,margin:0}}>Noch kein Plan.</p>: <div style={{display:"flex",flexDirection:"column",gap:8}}>{upcoming.slice(0,7).map((s,i)=>{const isT=s.d.toDateString()===today.toDateString();const info=getShiftInfo(s.sh);return (<div key={i} style={{display:"flex",alignItems:"center",gap:12,background:shBg(s.sh),borderRadius:14,padding:"12px 14px",border:isT?`2px solid ${shX(s.sh)}`:"1px solid transparent"}}><div style={{background:shX(s.sh),color:"#fff",borderRadius:10,width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16,flexShrink:0}}>{s.sh}</div><div><div style={{fontWeight:700,color:shC(s.sh),fontSize:14}}>{info.label} · {info.start}–{info.end}</div><div style={{fontSize:12,color:T.tx2}}>{isT&&<strong style={{color:shX(s.sh)}}>Heute · </strong>}{DW[s.d.getDay()]}, {s.day}. {MF[s.mo]}</div></div></div>);})}</div>)}
+              {empPlanView==="week"&& <div style={{marginTop:8}}>{empWeek().map((d,i)=>{const ms=d.getMonth()===cm0?myPlanCur:d.getMonth()===nm0?myPlanNxt:null;const sh=ms?ms[d.getDate()-1]:"-";const info=getShiftInfo(sh);const isT=d.toDateString()===today.toDateString();return (<div key={i} style={{display:"flex",alignItems:"center",gap:10,background:shBg(sh),borderRadius:10,padding:"9px 12px",marginBottom:5,border:isT?`2px solid ${shX(sh)}`:"1px solid transparent"}}><div style={{minWidth:50,fontSize:11,fontWeight:600,color:T.tx2}}>{DW[d.getDay()]} {d.getDate()}.</div><div style={{flex:1,fontWeight:700,color:shC(sh),fontSize:13}}>{sh==="-"?"Frei":info.label}{info.start&& <span style={{fontSize:11,fontWeight:400,marginLeft:6}}>{info.start}–{info.end}</span>}</div></div>);})}</div>}
+              {empPlanView==="month"&&MiniCal(myPlanCur,cy,cm0)}
+            </div>
+          </div>}
+
+          {eTab==="plan"&& <>
+            {(()=>{
+              const open=market.filter(m=>m.status==="open");
+              const myOffers=open.filter(m=>m.empId===me.id);
+              const others=open.filter(m=>m.empId!==me.id);
+              const myUpcoming=upcoming.filter(s=>s.d>today).slice(0,10);
+              const moKeyOf=s=>s.mo===cm0?cm:nm;
+              const dLbl=m=>`${m.day+1}.${Number(m.mo.slice(5,7))}.`;
+              return <div style={{...crd,marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><Icon n="repeat" s={16}/><h3 style={{margin:0,fontSize:14,fontWeight:700}}>Schichtbörse</h3>{others.length>0&& <span style={{fontSize:10.5,fontWeight:700,background:T.bl,color:T.blT,borderRadius:20,padding:"2px 8px"}}>{others.length} offen</span>}</div>
+                <p style={{margin:"0 0 12px",fontSize:11.5,color:T.tx2}}>Schicht abgeben oder von Kollegen übernehmen — Ruhezeiten werden automatisch geprüft, Leitung wird informiert.</p>
+                {others.length>0&& <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:12}}>{others.map(o=> <div key={o.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:shBg(o.key),borderRadius:11}}><div style={{background:shX(o.key),color:"#fff",borderRadius:8,width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:14,flexShrink:0}}>{o.key}</div><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:12.5,color:shC(o.key)}}>{getShiftInfo(o.key).label} am {dLbl(o)}</div><div style={{fontSize:11,color:T.tx2}}>von {o.empName}</div></div><button style={btn("p",true)} onClick={()=>takeShift(o)}>Übernehmen</button></div>)}</div>}
+                {myOffers.length>0&& <div style={{marginBottom:12}}>{myOffers.map(o=> <div key={o.id} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 12px",background:T.bg2,borderRadius:10,marginBottom:6}}><span style={{fontSize:12,flex:1}}>Du bietest <strong>{o.key}</strong> am {dLbl(o)} an</span><button style={btn("s",true)} onClick={()=>withdrawOffer(o.id)}>Zurückziehen</button></div>)}</div>}
+                {myUpcoming.length>0
+                  ? <details><summary style={{fontSize:12.5,fontWeight:600,cursor:"pointer",color:T.acc}}>Eigene Schicht abgeben</summary><div style={{display:"flex",flexDirection:"column",gap:6,marginTop:9}}>{myUpcoming.map((s,i)=> <div key={i} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 11px",background:T.bg2,borderRadius:10}}><span style={{fontSize:12,flex:1}}><strong>{s.sh}</strong> · {DW[s.d.getDay()]}, {s.day}. {MF[s.mo]}</span><button style={btn("w",true)} onClick={()=>offerShift(s.mo===cm0?cm:nm,s.day-1,s.sh)}>Anbieten</button></div>)}</div></details>
+                  : !others.length&&!myOffers.length&& <p style={{margin:0,fontSize:12,color:T.tx2}}>Keine offenen Angebote und keine kommenden Schichten.</p>}
+              </div>;
+            })()}
+            <div style={{...crd,marginBottom:12}}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>{MF[cm0]} {cy}</h3>{MiniCal(myPlanCur,cy,cm0)}</div>
+            <div style={crd}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>{MF[nm0]} {ny}</h3>{MiniCal(myPlanNxt,ny,nm0)}</div>
+          </>}
+
+          {eTab==="reqs"&& <div>
+            <div style={{display:"flex",marginBottom:12,background:T.bg2,borderRadius:12,padding:4,gap:4}}>{[["new","Neue"],["wish","Wunschfrei"],["sent","Verlauf"]].map(([k,l])=> <button key={k} style={{flex:1,padding:"9px",border:"none",borderRadius:9,cursor:"pointer",fontSize:12,fontWeight:rqTab===k?700:500,background:rqTab===k?T.invBg:"transparent",color:rqTab===k?T.inv:T.tx2}} onClick={()=>setRqTab(k)}>{l}</button>)}</div>
+
+            {rqTab==="new"&& <div style={crd}>
+              <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>Anfrage stellen</h3>
+              <label style={lbl}>Art</label><select style={inp} value={rqForm.type} onChange={e=>setRqForm(p=>({...p,type:e.target.value}))}><option value="vac">Urlaubsantrag</option><option value="sick">Krankmeldung</option><option value="swap">Schichttausch</option></select>
+              {rqForm.type==="sick"&& <><label style={lbl}>Von</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e=>setRqForm(p=>({...p,fromDate:e.target.value}))}/><label style={lbl}>Bis (optional)</label><input style={inp} type="date" value={rqForm.toDate} onChange={e=>setRqForm(p=>({...p,toDate:e.target.value}))}/></>}
+              {rqForm.type==="vac"&& <>
+                <label style={lbl}>Urlaubstage ({rqForm.dates.length})</label>
+                <p style={{fontSize:10,color:T.tx2,margin:"0 0 4px"}}>Wähle einen oder mehrere Tage. Sperrtage des Betriebs sind ausgeschlossen.</p>
+                {(()=>{const vacM=pm(nms());return <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginTop:4}}>{DW.map(d=> <div key={d} style={{textAlign:"center",fontSize:9,color:T.tx2,padding:"2px 0"}}>{d}</div>)}{Array.from({length:new Date(vacM.y,vacM.m0,1).getDay()},(_,i)=> <div key={`e${i}`}/>)}{Array.from({length:vacM.days},(_,i)=>{const d=i+1,ds=`${vacM.y}-${String(vacM.m0+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`,sel=rqForm.dates.includes(ds);const blocked=holidays.some(h=>h.date===ds);return (<button key={d} disabled={blocked} onClick={()=>setRqForm(p=>({...p,dates:sel?p.dates.filter(x=>x!==ds):[...p.dates,ds]}))} style={{aspectRatio:"1",borderRadius:7,border:"none",cursor:blocked?"not-allowed":"pointer",fontSize:11,fontWeight:sel?700:400,background:blocked?T.er:sel?T.invBg:T.bg2,color:blocked?T.erT:sel?T.inv:T.tx,opacity:blocked?.5:1}}>{d}</button>);})}</div>;})()}
+              </>}
+              {rqForm.type==="swap"&& <><label style={lbl}>Mein Tag</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e=>setRqForm(p=>({...p,fromDate:e.target.value}))}/><label style={lbl}>Mit wem</label><select style={inp} value={rqForm.toId} onChange={e=>setRqForm(p=>({...p,toId:e.target.value}))}><option value="">– Kollege –</option>{emps.filter(e=>e.id!==me.id).map(e=> <option key={e.id} value={e.id}>{e.name}</option>)}</select><label style={lbl}>Deren Tag</label><input style={inp} type="date" value={rqForm.toDate} onChange={e=>setRqForm(p=>({...p,toDate:e.target.value}))}/></>}
+              <label style={lbl}>Begründung / Notiz</label>
+              <textarea style={{...inp,minHeight:60,resize:"vertical"}} placeholder="Hilft der Führungskraft bei der Entscheidung" value={rqForm.note} onChange={e=>setRqForm(p=>({...p,note:e.target.value}))}/>
+              <button style={{...btn("p"),marginTop:12,width:"100%"}} onClick={submitRq}>Absenden</button>
+            </div>}
+
+            {rqTab==="wish"&& <div style={crd}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                <h3 style={{margin:0,fontSize:14,fontWeight:700}}>Wunschfrei</h3>
+                <input type="month" value={wishMonth} onChange={e=>{setWishMonth(e.target.value);loadWishes(e.target.value);}} style={{...inp,width:"auto",fontSize:12,padding:"5px 9px"}}/>
+              </div>
+              <p style={{margin:"0 0 12px",color:T.tx2,fontSize:12}}>Bis zu 3 Tage ({wsel.length}/3). Sperrtage sind ausgeschlossen.</p>
+              {(()=>{const{y,m0,days:wd}=pm(wishMonth);return <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:10}}>{DW.map(d=> <div key={d} style={{textAlign:"center",fontSize:9,color:T.tx2,padding:"2px 0"}}>{d}</div>)}{Array.from({length:new Date(y,m0,1).getDay()},(_,i)=> <div key={`e${i}`}/>)}{Array.from({length:wd},(_,i)=>{const d=i+1,sel=wsel.includes(d);const ds=`${y}-${String(m0+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;const blocked=holidays.some(h=>h.date===ds);return (<button key={d} disabled={blocked} onClick={()=>togWish(d)} style={{aspectRatio:"1",borderRadius:7,border:"none",cursor:blocked?"not-allowed":"pointer",fontWeight:sel?700:400,fontSize:11,background:blocked?T.er:sel?T.invBg:T.bg2,color:blocked?T.erT:sel?T.inv:T.tx,opacity:blocked?.5:1}}>{d}</button>);})}</div>;})()}
+              <label style={lbl}>Begründung (hilft KI & Führungskraft)</label>
+              <textarea style={{...inp,minHeight:60,resize:"vertical"}} placeholder="z. B. Arzttermin, Familienfeier..." value={wishNote} onChange={e=>setWishNote(e.target.value)}/>
+              <button style={{...btn("p"),width:"100%",marginTop:12}} onClick={saveWishes}>Wunschfrei speichern</button>
+            </div>}
+
+            {rqTab==="sent"&& <div>
+              {/* Wunschfrei-Verlauf */}
+              <div style={{...crd,marginBottom:12}}>
+                <h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:700}}>Wunschfrei-Verlauf</h3>
+                {(()=>{const myWishes=Object.entries(wishes).filter(([k])=>k.endsWith(`-${me.id}`)).map(([k,v])=>({key:k,month:k.replace(`-${me.id}`,""),data:v})).filter(w=>w.data&&(Array.isArray(w.data)?w.data.length:w.data.days?.length));return !myWishes.length? <p style={{color:T.tx2,fontSize:12,margin:0}}>Noch keine gespeichert.</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>{myWishes.map(w=>{const days=Array.isArray(w.data)?w.data:(w.data.days||[]);const note=w.data.note||"";const{m0,y}=pm(w.month);return (<div key={w.key} style={{padding:"8px 12px",background:T.bg2,borderRadius:10}}><div style={{fontWeight:600,fontSize:12}}>{MF[m0]} {y}</div><div style={{fontSize:11,color:T.tx2}}>Tage: {days.sort((a,b)=>a-b).join(", ")}{note&&` · "${note}"`}</div></div>);})}</div>;})()}
+              </div>
+              {/* Anfragen-Verlauf */}
+              <div style={crd}>
+                <h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:700}}>Anfragen-Verlauf</h3>
+                {!myRqs.length&& <p style={{color:T.tx2,textAlign:"center",padding:"16px 0",margin:0,fontSize:13}}>Keine Anfragen.</p>}
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>{[...myRqs].reverse().map(r=>{const sL={pending:[T.w,T.wT,"⏳ Offen"],ok:[T.ok,T.okT,"✓ Genehmigt"],no:[T.er,T.erT,"✗ Abgelehnt"]};const[bg,col,l]=sL[r.status]||sL.pending;return (<div key={r.id} style={{padding:"10px 13px",background:bg,borderRadius:11}}><div style={{fontWeight:700,fontSize:13,color:col}}>{{sick:"Krankmeldung",vac:"Urlaub",swap:"Tausch"}[r.type]}</div><div style={{fontSize:12,color:col,opacity:.8}}>{r.fromDate||r.dates?.slice(0,3).join(", ")||r.date}{r.note&&` · "${r.note}"`}</div><div style={{fontSize:11,fontWeight:700,color:col,marginTop:2}}>{l}</div>{r.decisionNote&& <div style={{fontSize:11,color:col,marginTop:4,fontStyle:"italic"}}>Antwort: {r.decisionNote}</div>}</div>);})}</div>
+              </div>
+            </div>}
+          </div>}
+
+          {eTab==="profile"&& <div>
+            <div style={{...crd,marginBottom:12}}>
+              <div style={{display:"flex",gap:13,alignItems:"center",padding:13,background:T.bg2,borderRadius:13,marginBottom:13}}><Avatar emp={me} size={52}/><div><div style={{fontWeight:800,fontSize:16}}>{me.name}</div><div style={{fontSize:12,color:T.tx2}}>ID: {me.lid} · {me.workPct||100}%-Stelle</div><div style={{fontSize:12,color:ROLES[me.role||"staff"].col,fontWeight:700}}>{ROLES[me.role||"staff"].l}</div></div></div>
+              <label style={lbl}>Bevorzugte Schicht</label>
+              <select style={inp} value={me.pref||"any"} onChange={e=>savePref(e.target.value)}>{PR.map(p=> <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s=> <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select>
+            </div>
+            <div style={crd}>
+              <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>PIN ändern</h3>
+              {[["Aktuell","cur"],["Neu (≥4)","nw"],["Bestätigen","cf"]].map(([l,k])=> <div key={k}><label style={lbl}>{l}</label><input style={{...inp,letterSpacing:6,fontWeight:700,textAlign:"center"}} type="password" placeholder="••••" value={pinCh[k]} onChange={e=>setPinCh(p=>({...p,[k]:e.target.value}))}/></div>)}
+              <button style={{...btn("p"),marginTop:14,width:"100%"}} onClick={doChPin}>Speichern</button>
+            </div>
+          </div>}
+        </div>
+      </div>
+    );
+  }
+  return <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",color:T.tx2}}>…</div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
