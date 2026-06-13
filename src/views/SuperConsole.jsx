@@ -43,12 +43,14 @@ export default function SuperConsoleView() {
                     ? <button style={btn("w", true)} onClick={() => updOrg(o.id, { status: "archived" })} title="Offline nehmen"><Icon n="lock" s={14} />Offline</button>
                     : <button style={btn("ok", true)} onClick={() => updOrg(o.id, { status: "active" })} title="Reaktivieren"><Icon n="check" s={14} />Reaktivieren</button>}
                   <button style={btn("bl", true)} onClick={async () => {
-                    const d = await db.get(`org_${o.id}`);
-                    const safe = d || { emps: [], wishes: {}, scheds: {}, reqs: [] };
-                    if (!Array.isArray(safe.reqs)) safe.reqs = [];
-                    const owner = safe.emps.find(e => e.role === "owner") || safe.emps[0];
-                    if (!owner) { flash("er", "Kein Account"); return; }
-                    setOrgId(o.id); setData(safe); setMe(owner); setIsSuper(false); setWasSuper(true); setView("admin"); setATab("dash");
+                    try {
+                      const d = await db.get(`org_${o.id}`);
+                      const safe = d || { emps: [], wishes: {}, scheds: {}, reqs: [] };
+                      if (!Array.isArray(safe.reqs)) safe.reqs = [];
+                      const owner = (safe.emps || []).find(e => e.role === "owner") || (safe.emps || [])[0];
+                      if (!owner) { flash("er", `${o.name} hat noch keinen Account`); return; }
+                      setOrgId(o.id); setData(safe); setMe(owner); setIsSuper(false); setWasSuper(true); setView("admin"); setATab("dash");
+                    } catch (e) { flash("er", e.message || "Betrieb konnte nicht geladen werden"); }
                   }}><Icon n="logout" s={14} />Support</button>
                   <button style={{ ...btn("er", true), padding: "7px 9px" }} onClick={async () => {
                     if (!confirm(`${o.name} und ALLE Daten endgültig löschen?`)) return;

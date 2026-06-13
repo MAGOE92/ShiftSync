@@ -88,11 +88,13 @@ const db = {
       throw new Error("Ein Betrieb mit diesem Namen existiert bereits – bitte einloggen.");
     }
 
+    const VALID_PLANS = ["free", "starter", "pro", "business"];
+    const chosenPlan = asSuper && VALID_PLANS.includes(payload.plan) ? payload.plan : (asSuper ? "free" : "trial");
     const newOrg = {
       id: rid(), code, name: coName, sub: coSub, weekStdHours,
       shifts: DEFAULT_SHIFTS, holidays: [], perms: DEFAULT_PERMS, createdAt: Date.now(),
       status: asSuper ? "active" : "trial",
-      plan: asSuper ? "pro" : "trial",
+      plan: chosenPlan,
       trialEnds: asSuper ? null : Date.now() + 14 * 864e5,
       accent: "#4f46e5",
     };

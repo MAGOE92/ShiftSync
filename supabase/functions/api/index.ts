@@ -453,6 +453,10 @@ async function actSetup(body: Any, session: Session | null) {
   const { data: clash } = await db.from("orgs").select("id").eq("code", code).maybeSingle();
   if (clash) throw new ApiError("Ein Betrieb mit diesem Namen existiert bereits – bitte einloggen.", 409);
 
+  // Super wählt den Tarif (sofort aktiv, keine Testphase). Self-Signup = immer 14-Tage-Trial.
+  const VALID_PLANS = ["free", "starter", "pro", "business"];
+  const chosenPlan = asSuper && VALID_PLANS.includes(body.plan) ? body.plan : (asSuper ? "free" : "trial");
+
   const orgId = crypto.randomUUID();
   const empId = crypto.randomUUID();
   const orgRow = {
@@ -460,7 +464,7 @@ async function actSetup(body: Any, session: Session | null) {
     shifts: Array.isArray(body.shifts) && body.shifts.length ? body.shifts : DEFAULT_SHIFTS,
     holidays: [], perms: (body.perms && Object.keys(body.perms).length) ? body.perms : DEFAULT_PERMS,
     status: asSuper ? "active" : "trial",
-    plan: asSuper ? "pro" : "trial",
+    plan: chosenPlan,
     trial_ends: asSuper ? null : new Date(Date.now() + 14 * 864e5).toISOString(),
     accent: "#4f46e5",
   };
