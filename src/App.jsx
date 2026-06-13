@@ -5,7 +5,7 @@ import { arbzgCheck } from "./lib/arbzg.js";
 import { algo } from "./lib/algo.js";
 import { rid, tms, nms, pm, isoDate, hoursOf, relTime, doICS, datesBetween } from "./lib/utils.js";
 import {
-  SUPER_ADMIN_PW, SH, SHIFT_COLORS, ROLES, ACCENTS, PLANS, STATUS,
+  SH, SHIFT_COLORS, ROLES, ACCENTS, PLANS, STATUS,
   PERMS, DEFAULT_PERMS, DEFAULT_SHIFTS, MF, DW, PR,
 } from "./theme/constants.js";
 import { Icon } from "./theme/icons.jsx";
@@ -24,7 +24,7 @@ export default function App() {
   const [cfg, setCfg] = useState({ selfSignup: false });
   const [orgId, setOrgId] = useState(null);
   const [data, setData] = useState({ emps: [], wishes: {}, scheds: {}, reqs: [] });
-  const [view, setView] = useState("login");
+  const [view, setView] = useState("loading");
   const [me, setMe] = useState(null);
   const [isSuper, setIsSuper] = useState(false);
   const [wasSuper, setWasSuper] = useState(false);
@@ -81,26 +81,50 @@ export default function App() {
     `; document.head.appendChild(st);
   }, []);
 
+  // Setzt den React-State aus einer Login/Setup/Restore-Antwort des Adapters.
+  const applySession = r => {
+    if (r.super) {
+      setOrgs(r.orgs || []); setIsSuper(true); setWasSuper(false);
+      setMe(null); setOrgId(null); setView("super"); return;
+    }
+    setOrgs(r.orgs || []); setIsSuper(false); setWasSuper(false);
+    setOrgId(r.org.id); setData(r.data); setMe(r.emp);
+    const rolePerms = (r.org.perms?.[r.emp.role]) || DEFAULT_PERMS[r.emp.role] || {};
+    const isMgmt = r.emp.role === "owner" || r.emp.role === "director" || r.emp.role === "manager"
+      || Object.values(rolePerms).some(v => v);
+    if (isMgmt) { setView("admin"); setATab("dash"); } else { setView("emp"); setETab("home"); }
+  };
+
   useEffect(() => {
     (async () => {
+      const [d, c] = await Promise.all([db.get("dark"), db.get("config")]);
+      if (d !== null) setDark(d);
+      if (c) setCfg(c);
+      // Bestehende Sitzung wiederherstellen (Gateway: via gespeichertem Token; lokal: immer null)
       try {
-        const [o, d, c] = await Promise.all([db.get("orgs"), db.get("dark"), db.get("config")]);
-        if (d !== null) setDark(d);
-        if (c) setCfg(c);
-        if (o && o.length) {
-          let migrated = false;
-          const migratedOrgs = o.map(x => {
-            let nx = { ...x };
-            if (!nx.code) { nx.code = orgCode(nx.name); migrated = true; }
-            if (!nx.status) { nx.status = "active"; migrated = true; }
-            if (!nx.plan) { nx.plan = "pro"; migrated = true; }
-            return nx;
-          });
-          if (migrated) await db.set("orgs", migratedOrgs);
-          setOrgs(migratedOrgs);
-          setView("login");
-        } else setView("login");
-      } catch { setView("login"); }
+        const r = await db.restore?.();
+        if (r) { applySession(r); return; }
+      } catch { /* Token ungültig → normaler Login */ }
+      // Keine Sitzung: nur im Lokal-Modus vorhandene Betriebe laden + Altdaten migrieren.
+      // Im Gateway-Modus gibt es ohne Token keine globale Betriebsliste (Mandantentrennung).
+      if (db.mode !== "supabase") {
+        try {
+          const o = await db.get("orgs");
+          if (o && o.length) {
+            let migrated = false;
+            const migratedOrgs = o.map(x => {
+              let nx = { ...x };
+              if (!nx.code) { nx.code = orgCode(nx.name); migrated = true; }
+              if (!nx.status) { nx.status = "active"; migrated = true; }
+              if (!nx.plan) { nx.plan = "pro"; migrated = true; }
+              return nx;
+            });
+            if (migrated) await db.set("orgs", migratedOrgs);
+            setOrgs(migratedOrgs);
+          }
+        } catch { /* ignore */ }
+      }
+      setView("login");
     })();
   }, []);
 
@@ -191,45 +215,29 @@ export default function App() {
   const notifMeta = t => ({ decision_ok: ["check", T.ok, T.okT], decision_no: ["x", T.er, T.erT], newreq: ["inbox", T.bl, T.blT], swap: ["repeat", T.pu, T.puT], plan: ["calendar", T.bl, T.blT] }[t] || ["bell", T.bg2, T.tx2]);
 
   // ─── AUTH ───
-  const doLogin = () => {
-    const code = lOrg.trim().toUpperCase(), id = lId.trim().toLowerCase(), pin = lPin.trim();
-    if (code === "ADMIN" && id === "superadmin" && pin === SUPER_ADMIN_PW) { setIsSuper(true); setLOrg(""); setLId(""); setLPin(""); setView("super"); return; }
-    (async () => {
-      const o = orgs.find(x => x.code === code);
-      if (!o) { flash("er", "Betriebs-ID nicht gefunden"); return; }
-      const d = await db.get(`org_${o.id}`);
-      const empList = d?.emps || [];
-      const byId = empList.find(e => String(e.lid).trim().toLowerCase() === id);
-      if (!byId) { flash("er", `Login-ID „${id}" existiert in diesem Betrieb nicht`); return; }
-      const emp = String(byId.pin).trim() === pin ? byId : null;
-      if (!emp) { flash("er", `PIN falsch für ${byId.name}`); return; }
-      const st = o.status || "active";
-      if (st === "suspended") { flash("er", "Betrieb gesperrt – bitte Anbieter kontaktieren"); return; }
-      if (st === "archived" && emp.role !== "owner") { flash("er", "Dieser Betrieb ist offline gestellt"); return; }
-      if (st === "trial" && o.trialEnds && o.trialEnds < Date.now()) { flash("er", "Testzeitraum abgelaufen"); return; }
-      const safe = d || { emps: [], wishes: {}, scheds: {}, reqs: [] };
-      if (!Array.isArray(safe.reqs)) safe.reqs = [];
-      setOrgId(o.id); setData(safe); setMe(emp); setLOrg(""); setLId(""); setLPin("");
-      const rolePerms = (o.perms?.[emp.role]) || DEFAULT_PERMS[emp.role] || {};
-      const isMgmt = emp.role === "owner" || emp.role === "director" || emp.role === "manager" || Object.values(rolePerms).some(v => v);
-      if (isMgmt) { setView("admin"); setATab("dash"); } else { setView("emp"); setETab("home"); }
-    })();
+  const doLogin = async () => {
+    try {
+      const r = await db.login(lOrg, lId, lPin);
+      setLOrg(""); setLId(""); setLPin("");
+      applySession(r);
+    } catch (e) { flash("er", e.message || "Anmeldung fehlgeschlagen"); }
   };
 
   const doSetup = async () => {
-    if (!wiz.coName.trim() || !wiz.name.trim() || !wiz.lid.trim() || wiz.pin.length < 4) { flash("er", "Alle Felder, PIN ≥4"); return; }
-    const code = orgCode(wiz.coName.trim());
-    if (orgs.some(o => o.code === code)) { flash("er", "Ein Betrieb mit diesem Namen existiert bereits – bitte einloggen."); return; }
-    const newOrg = { id: rid(), code, name: wiz.coName.trim(), sub: wiz.coSub.trim() || "Tankstelle · 24/7", weekStdHours: Number(wiz.weekStdHours) || 40, shifts: DEFAULT_SHIFTS, holidays: [], perms: DEFAULT_PERMS, createdAt: Date.now(), status: isSuper ? "active" : "trial", plan: isSuper ? "pro" : "trial", trialEnds: isSuper ? null : Date.now() + 14 * 864e5 };
-    const owner = { id: rid(), name: wiz.name.trim(), lid: wiz.lid.trim().toLowerCase(), pin: wiz.pin.trim(), pref: "any", role: "owner", workPct: 100, inPlan: false, notes: "" };
-    const orgList = [...orgs, newOrg];
-    await saveOrgs(orgList);
-    await db.set(`org_${newOrg.id}`, { emps: [owner], wishes: {}, scheds: {}, reqs: [] });
-    if (isSuper) { setView("super"); flash("ok", `${newOrg.name} angelegt · Betriebs-ID: ${newOrg.code} · Login: ${owner.lid} / ${owner.pin}`); }
-    else { setOrgId(newOrg.id); setData({ emps: [owner], wishes: {}, scheds: {}, reqs: [] }); setMe(owner); setView("admin"); setATab("dash"); flash("ok", `${newOrg.name} eingerichtet · Betriebs-ID: ${newOrg.code}`); }
-    setWiz({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "" });
+    const ownerPin = wiz.pin.trim();
+    try {
+      const r = await db.setup({ ...wiz, asSuper: isSuper });
+      setWiz({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "" });
+      if (r.super) {
+        setOrgs(r.orgs); setView("super");
+        flash("ok", `${r.org.name} angelegt · Betriebs-ID: ${r.org.code} · Login: ${r.emp.lid} / ${ownerPin}`);
+      } else {
+        applySession(r);
+        flash("ok", `${r.org.name} eingerichtet · Betriebs-ID: ${r.org.code}`);
+      }
+    } catch (e) { flash("er", e.message || "Anlegen fehlgeschlagen"); }
   };
-  const logout = () => { setMe(null); setOrgId(null); setIsSuper(false); setWasSuper(false); setView("login"); };
+  const logout = () => { db.logout?.(); setMe(null); setOrgId(null); setIsSuper(false); setWasSuper(false); setData({ emps: [], wishes: {}, scheds: {}, reqs: [] }); setView("login"); };
 
   // ─── ADMIN ACTIONS ───
   const seedDemo = async () => { const demo = [{ name: "Ben Schmidt", lid: "ben.schmidt", pin: "2222", pref: "any", role: "director", workPct: 100, inPlan: false }, { name: "Clara Weber", lid: "clara.weber", pin: "3333", pref: "any", role: "manager", workPct: 100, inPlan: true }, { name: "David Koch", lid: "david.koch", pin: "4444", pref: "any", role: "staff", workPct: 100, inPlan: true }, { name: "Eva Bauer", lid: "eva.bauer", pin: "5555", pref: "any", role: "staff", workPct: 75, inPlan: true }, { name: "Frank Huber", lid: "frank.huber", pin: "6666", pref: "FS", role: "staff", workPct: 50, inPlan: true }, { name: "Gabi Stern", lid: "gabi.stern", pin: "7777", pref: "noN", role: "staff", workPct: 100, inPlan: true }].map(e => ({ ...e, id: rid(), notes: "" })); await saveData({ ...data, emps: [...emps, ...demo] }); flash("ok", "6 Demo-Mitarbeiter ✓"); };
@@ -238,9 +246,31 @@ export default function App() {
   const doRst = async () => { const pinT = rstP.trim(); if (pinT.length < 4) { flash("er", "≥4 Zeichen"); return; } await saveData({ ...data, emps: emps.map(e => e.id === rstE.id ? { ...e, pin: pinT } : e) }); flash("ok", `Neuer PIN: ${rstP}`); setRstE(null); setRstP(""); };
   const delEmp = async emp => { if (emp.id === me.id) { flash("er", "Dich selbst nicht löschen"); return; } if (emp.role === "owner") { flash("er", "Inhaber nicht löschbar"); return; } await saveData({ ...data, emps: emps.filter(e => e.id !== emp.id) }); flash("ok", `${emp.name} entfernt`); };
   const toggleInPlan = async emp => { const next = !(emp.inPlan !== false); await saveData({ ...data, emps: emps.map(e => e.id === emp.id ? { ...e, inPlan: next } : e) }); flash("ok", `${emp.name} ${next ? "wird im Dienstplan berücksichtigt" : "aus dem Dienstplan genommen"}`); };
-  const switchToOrg = async (targetId, lid) => { const o = orgs.find(x => x.id === targetId); if (!o) { flash("er", "Betrieb nicht gefunden"); return; } const d = await db.get(`org_${targetId}`); const safe = d || { emps: [], wishes: {}, scheds: {}, reqs: [] }; if (!Array.isArray(safe.reqs)) safe.reqs = []; const acc = safe.emps.find(e => e.lid === lid) || safe.emps.find(e => e.role === "owner") || safe.emps[0]; if (!acc) { flash("er", "Kein Account im Zielbetrieb"); return; } setOrgId(targetId); setData(safe); setMe(acc); setShowOrgs(false); setATab("dash"); flash("ok", `Gewechselt zu ${o.name}`); };
-  const linkOrg = async () => { const code = linkForm.code.trim().toUpperCase(), lid = linkForm.lid.trim().toLowerCase(), pin = linkForm.pin.trim(); if (!code || !lid || !pin) { flash("er", "Alle Felder ausfüllen"); return; } const target = orgs.find(x => x.code === code); if (!target) { flash("er", "Betriebs-ID nicht gefunden"); return; } if (target.id === orgId) { flash("er", "Das ist der aktuelle Betrieb"); return; } const td = await db.get(`org_${target.id}`); const tsafe = td || { emps: [], wishes: {}, scheds: {}, reqs: [] }; const tacc = (tsafe.emps || []).find(e => e.lid === lid && e.pin === pin); if (!tacc) { flash("er", "Login-ID oder PIN im Zielbetrieb falsch"); return; } if (!(tacc.role === "owner" || tacc.role === "director" || tacc.role === "manager")) { flash("er", "Dieser Account darf dort nicht planen"); return; } const myLink = { id: target.id, code: target.code, name: target.name, lid: tacc.lid }; const myNew = [...(me.linkedOrgs || []).filter(l => l.id !== target.id), myLink]; await saveData({ ...data, emps: emps.map(e => e.id === me.id ? { ...e, linkedOrgs: myNew } : e) }); setMe(p => ({ ...p, linkedOrgs: myNew })); const backLink = { id: orgId, code: org.code, name: org.name, lid: me.lid }; const tNew = [...(tacc.linkedOrgs || []).filter(l => l.id !== orgId), backLink]; await db.set(`org_${target.id}`, { ...tsafe, emps: tsafe.emps.map(e => e.id === tacc.id ? { ...e, linkedOrgs: tNew } : e) }); setLinkForm({ code: "", lid: "", pin: "" }); flash("ok", `${target.name} verknüpft`); };
-  const unlinkOrg = async targetId => { const myNew = (me.linkedOrgs || []).filter(l => l.id !== targetId); await saveData({ ...data, emps: emps.map(e => e.id === me.id ? { ...e, linkedOrgs: myNew } : e) }); setMe(p => ({ ...p, linkedOrgs: myNew })); flash("ok", "Verknüpfung entfernt"); };
+  const switchToOrg = async (targetId, lid) => {
+    try {
+      const r = await db.switchOrg(targetId, lid);
+      if (r.orgs) setOrgs(r.orgs);
+      setOrgId(r.org.id); setData(r.data); setMe(r.emp); setShowOrgs(false); setATab("dash");
+      flash("ok", `Gewechselt zu ${r.org.name}`);
+    } catch (e) { flash("er", e.message || "Wechsel fehlgeschlagen"); }
+  };
+  const linkOrg = async () => {
+    try {
+      const r = await db.linkOrg(linkForm.code, linkForm.lid, linkForm.pin);
+      if (r.orgs) setOrgs(r.orgs);
+      setMe(p => ({ ...p, linkedOrgs: r.linkedOrgs }));
+      setLinkForm({ code: "", lid: "", pin: "" });
+      flash("ok", `${r.targetName} verknüpft`);
+    } catch (e) { flash("er", e.message || "Verknüpfen fehlgeschlagen"); }
+  };
+  const unlinkOrg = async targetId => {
+    try {
+      const r = await db.unlinkOrg(targetId);
+      if (r.orgs) setOrgs(r.orgs);
+      setMe(p => ({ ...p, linkedOrgs: r.linkedOrgs }));
+      flash("ok", "Verknüpfung entfernt");
+    } catch (e) { flash("er", e.message || "Fehlgeschlagen"); }
+  };
 
   const absMap = () => { const m = {}; reqList.filter(r => r.status === "ok").forEach(r => { if (!m[r.uid]) m[r.uid] = []; const { y, m0 } = pm(planMo); const dates = r.type === "vac" ? (r.dates || []) : r.type === "sick" ? (r.dates || (r.fromDate && r.toDate ? datesBetween(r.fromDate, r.toDate) : r.date ? [r.date] : [])) : []; dates.forEach(ds => { const d = new Date(ds); if (d.getFullYear() === y && d.getMonth() === m0) m[r.uid].push({ day: d.getDate(), type: r.type === "vac" ? "U" : "K" }); }); }); return m; };
 
@@ -300,7 +330,19 @@ export default function App() {
   const togWish = d => { if (wsel.includes(d)) setWsel(wsel.filter(x => x !== d)); else if (wsel.length < 3) setWsel([...wsel, d]); else flash("er", "Max. 3 Tage"); };
   const loadWishes = mo => { const key = `${mo}-${me.id}`; const w = wishes[key]; if (w && typeof w === "object" && Array.isArray(w.days)) { setWsel(w.days); setWishNote(w.note || ""); } else if (Array.isArray(w)) { setWsel(w); setWishNote(""); } else { setWsel([]); setWishNote(""); } };
   const savePref = async p => { await saveData({ ...data, emps: emps.map(e => e.id === me.id ? { ...e, pref: p } : e) }); setMe(x => ({ ...x, pref: p })); flash("ok", "Gespeichert ✓"); };
-  const doChPin = async () => { const cur = emps.find(e => e.id === me.id); if (pinCh.cur !== cur.pin) { flash("er", "Aktueller PIN falsch"); return; } if (pinCh.nw.length < 4) { flash("er", "≥4 Zeichen"); return; } if (pinCh.nw !== pinCh.cf) { flash("er", "PINs ungleich"); return; } await saveData({ ...data, emps: emps.map(e => e.id === me.id ? { ...e, pin: pinCh.nw } : e) }); setMe(p => ({ ...p, pin: pinCh.nw })); setPinCh({ cur: "", nw: "", cf: "" }); flash("ok", "PIN geändert ✓"); };
+  const doChPin = async () => {
+    if (pinCh.nw.length < 4) { flash("er", "≥4 Zeichen"); return; }
+    if (pinCh.nw !== pinCh.cf) { flash("er", "PINs ungleich"); return; }
+    try {
+      await db.chpin(pinCh.cur, pinCh.nw);
+      if (db.mode !== "supabase") {
+        setMe(p => ({ ...p, pin: pinCh.nw }));
+        setData(d => ({ ...d, emps: (d.emps || []).map(e => e.id === me.id ? { ...e, pin: pinCh.nw } : e) }));
+      }
+      setPinCh({ cur: "", nw: "", cf: "" });
+      flash("ok", "PIN geändert ✓");
+    } catch (e) { flash("er", e.message || "PIN-Änderung fehlgeschlagen"); }
+  };
   const submitRq = async () => { const r = { id: rid(), type: rqForm.type, uid: me.id, status: "pending", at: Date.now(), note: rqForm.note }; if (rqForm.type === "sick") { if (!rqForm.fromDate) { flash("er", "Datum"); return; } r.fromDate = rqForm.fromDate; r.toDate = rqForm.toDate || rqForm.fromDate; r.dates = datesBetween(r.fromDate, r.toDate); } else if (rqForm.type === "vac") { if (!rqForm.dates.length) { flash("er", "Tage wählen"); return; } r.dates = rqForm.dates; } else if (rqForm.type === "swap") { if (!rqForm.fromDate || !rqForm.toId || !rqForm.toDate) { flash("er", "Alle Felder"); return; } r.date = rqForm.fromDate; r.toId = rqForm.toId; r.toDate = rqForm.toDate; } const tL2 = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }[r.type]; const mgrs = emps.filter(e => e.role === "owner" || e.role === "director" || e.role === "manager").map(m => ({ uid: m.id, type: "newreq", text: `Neue ${tL2}-Anfrage von ${me.name}` })); const swapN = r.type === "swap" && r.toId ? [{ uid: r.toId, type: "swap", text: `${me.name} möchte mit dir tauschen: ${r.date} ↔ ${r.toDate}` }] : []; const nt = buildNotifs([...mgrs, ...swapN]); await saveData({ ...data, reqs: [...reqList, r], notifs: [...allNotifs, ...nt] }); setRqForm({ type: "vac", dates: [], note: "", toId: "", toDate: "", fromDate: "" }); flash("ok", "Anfrage gesendet ✓"); setRqTab("sent"); };
 
   const today = new Date(), cm = tms(), nm = nms();

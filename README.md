@@ -34,8 +34,24 @@ Nach jedem Refactor: `npm run test && npm run test:e2e` müssen grün bleiben.
 - **`src/views/`** — `Login`, `Setup`, `SuperConsole`, `admin/AdminView`, `employee/EmpView`.
 - **`src/lib/`** — reine Logik (`arbzg`, `algo`, `orgCode`, `utils`) + Speicher-Layer.
 - **`src/lib/storage.js`** — Router: wählt zwischen `storage.local.js` (localStorage)
-  und `storage.supabase.js` je nach `VITE_STORAGE`. Einzige Persistenz-Stelle.
+  und `storage.supabase.js` (Cloud-Gateway) je nach `VITE_STORAGE`. Beide Adapter
+  bieten dieselbe Schnittstelle (`get/set/login/setup/restore/switchOrg/…`).
 - **`src/theme/`** — `constants.js` (Tarife, Rollen, Schichten …), `icons.jsx` (SVG-Set).
+
+## Cloud-Architektur (Gateway-Modell)
+
+Im Supabase-Modus läuft **jeder** Datenzugriff über eine einzige Edge-Function
+`supabase/functions/api` (`service_role`, umgeht RLS). Der öffentliche Client
+spricht nie direkt mit den Tabellen — **RLS ist auf allen Tabellen komplett
+gesperrt** (keine Policies). Das Gateway erzwingt selbst:
+- **Auth:** Login per Betriebs-ID + Login-ID + PIN; PINs als PBKDF2-Hash (nie Klartext).
+- **Sessions:** eigene HMAC-SHA256-Tokens (30 Tage), im `localStorage` als `ss_token`.
+- **Mandantentrennung:** das Token ist auf einen Betrieb gescoped; Querzugriffe sind unmöglich.
+- **Feld-Whitelist:** Betriebe können `plan`/`status` nicht selbst hochstufen.
+
+So bleibt der „alles laden / alles speichern"-Datenfluss der App erhalten, ohne
+die Datenbank dem öffentlichen Key auszusetzen. Realtime entfällt bewusst
+(RLS gesperrt) — frische Daten kommen bei Login/Reload und nach jeder Aktion.
 
 ## Umgebungsvariablen
 
@@ -51,19 +67,29 @@ VITE_STRIPE_ENABLED=true
 Edge-Function-Secrets (Server, nicht im Client): `STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_IDS`, `JWT_SECRET` — siehe `.env.example`.
 
-## Backend ausrollen (optional)
+## Backend ausrollen
 
-**Supabase** (`supabase/`):
-```bash
-supabase db push                                  # Migrationen (Schema, RLS, Realtime)
-supabase functions deploy login                   # Custom-Auth (bcrypt-PIN → JWT)
-supabase functions deploy create-checkout
-supabase functions deploy stripe-webhook
+Voraussetzung: `SUPABASE_ACCESS_TOKEN` (Personal Access Token) gesetzt.
+
+**1. Schema + RLS-Sperre einspielen** (Windows/PowerShell):
+```powershell
+$env:SUPABASE_ACCESS_TOKEN="sbp_…"
+./scripts/apply-migrations.ps1            # legt Tabellen an + sperrt RLS
 ```
-Schema/RLS/Realtime liegen in `supabase/migrations/`. Details: `docs/MIGRATION.md`.
+(`./scripts/db-reset.ps1` droppt + erstellt neu — nur für leere Erst-Einrichtung.)
 
-**Stripe**: Webhook-Endpoint auf die `stripe-webhook`-Function zeigen lassen, die
-Price-IDs in `STRIPE_PRICE_IDS` (JSON: `{"price_xxx":"starter", …}`) hinterlegen.
+**2. Gateway-Function deployen** und Secrets setzen:
+```bash
+npx supabase secrets set --project-ref <ref> SESSION_SECRET=<zufall> SUPER_ADMIN_PW=<pw>
+npx supabase functions deploy api --project-ref <ref> --no-verify-jwt
+```
+`--no-verify-jwt`, weil das Gateway seine eigenen HMAC-Tokens prüft.
+
+**3. Gateway testen:** `./scripts/test-gateway.ps1` (12 End-to-End-Checks).
+
+**Stripe** (Phase 3, noch nicht aktiv): `create-checkout` + `stripe-webhook`
+liegen unter `supabase/functions/`, sind aber noch nicht deployt. Erst
+`VITE_STRIPE_ENABLED=true` + Price-IDs in `STRIPE_PRICE_IDS` aktivieren.
 
 ## Deployment (Vercel)
 

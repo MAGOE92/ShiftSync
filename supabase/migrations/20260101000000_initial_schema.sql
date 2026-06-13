@@ -1,14 +1,15 @@
 -- ============================================================
 -- ShiftSync Pro · Initial Schema
 -- ============================================================
+-- IDs sind text, nicht uuid: die App generiert clientseitig kurze
+-- rid()-Strings (Math.random().toString(36)). Server-generierte IDs
+-- (Setup) sind UUIDs als Text — beides passt in text.
 
--- Extensions
 create extension if not exists "pgcrypto";
-create extension if not exists "uuid-ossp";
 
 -- ─── ORGS ────────────────────────────────────────────────────
 create table public.orgs (
-  id            uuid primary key default gen_random_uuid(),
+  id            text primary key default gen_random_uuid()::text,
   code          text unique not null,          -- 5-char FNV hash, never changes
   name          text not null,
   sub           text not null default 'Tankstelle · 24/7',
@@ -16,9 +17,9 @@ create table public.orgs (
   shifts        jsonb not null default '[]',   -- [{key,label,start,end,required,colorIdx}]
   holidays      jsonb not null default '[]',   -- [{date,name}]
   perms         jsonb not null default '{}',   -- Rollen-Berechtigungsmatrix
-  status        text not null default 'trial'  -- active|trial|suspended|archived
+  status        text not null default 'trial'
                   check (status in ('active','trial','suspended','archived')),
-  plan          text not null default 'trial'  -- free|trial|starter|pro|business
+  plan          text not null default 'trial'
                   check (plan in ('free','trial','starter','pro','business')),
   trial_ends    timestamptz,
   accent        text default '#4f46e5',
@@ -29,11 +30,11 @@ create table public.orgs (
 
 -- ─── EMPLOYEES ───────────────────────────────────────────────
 create table public.employees (
-  id            uuid primary key default gen_random_uuid(),
-  org_id        uuid not null references public.orgs on delete cascade,
+  id            text primary key default gen_random_uuid()::text,
+  org_id        text not null references public.orgs on delete cascade,
   name          text not null,
   lid           text not null,                 -- login-id, lowercase, unique per org
-  pin_hash      text not null,                 -- bcrypt hash
+  pin_hash      text not null,                 -- pbkdf2$<iter>$<salt>$<hash>
   role          text not null default 'staff'
                   check (role in ('owner','director','manager','staff')),
   work_pct      int not null default 100
@@ -48,25 +49,28 @@ create table public.employees (
 
 -- ─── SCHEDULES ────────────────────────────────────────────────
 create table public.schedules (
-  org_id        uuid not null references public.orgs on delete cascade,
+  org_id        text not null references public.orgs on delete cascade,
   month         text not null,                 -- 'YYYY-MM'
   data          jsonb not null default '{}',   -- {empId: ["F"|"S"|"-"…]}
   published_at  timestamptz not null default now(),
-  published_by  uuid references public.employees,
   primary key (org_id, month)
 );
 
+-- Hinweis: emp_id-Spalten haben bewusst KEINEN FK auf employees —
+-- die App lässt Anfragen/Benachrichtigungen gelöschter Mitarbeiter
+-- bestehen (gleiches Verhalten wie die lokale Version).
+
 -- ─── REQUESTS ─────────────────────────────────────────────────
 create table public.requests (
-  id            uuid primary key default gen_random_uuid(),
-  org_id        uuid not null references public.orgs on delete cascade,
-  emp_id        uuid not null references public.employees on delete cascade,
+  id            text primary key default gen_random_uuid()::text,
+  org_id        text not null references public.orgs on delete cascade,
+  emp_id        text not null,
   type          text not null
                   check (type in ('vac','sick','swap')),
-  payload       jsonb not null default '{}',   -- dates[], fromDate, toDate, toId, toDate, note
+  payload       jsonb not null default '{}',   -- dates[], fromDate, toDate, toId, date, note
   status        text not null default 'pending'
                   check (status in ('pending','ok','no')),
-  decided_by    uuid references public.employees,
+  decided_by    text,
   decided_at    timestamptz,
   decision_note text not null default '',
   created_at    timestamptz not null default now()
@@ -74,9 +78,9 @@ create table public.requests (
 
 -- ─── NOTIFICATIONS ────────────────────────────────────────────
 create table public.notifications (
-  id            uuid primary key default gen_random_uuid(),
-  org_id        uuid not null references public.orgs on delete cascade,
-  emp_id        uuid not null references public.employees on delete cascade,
+  id            text primary key default gen_random_uuid()::text,
+  org_id        text not null references public.orgs on delete cascade,
+  emp_id        text not null,
   type          text not null,                 -- decision_ok|decision_no|newreq|swap|plan
   text          text not null,
   read          boolean not null default false,
@@ -85,9 +89,9 @@ create table public.notifications (
 
 -- ─── CLOCK ENTRIES ────────────────────────────────────────────
 create table public.clock_entries (
-  id            uuid primary key default gen_random_uuid(),
-  org_id        uuid not null references public.orgs on delete cascade,
-  emp_id        uuid not null references public.employees on delete cascade,
+  id            text primary key default gen_random_uuid()::text,
+  org_id        text not null references public.orgs on delete cascade,
+  emp_id        text not null,
   day           date not null,
   clock_in      timestamptz,
   clock_out     timestamptz,
@@ -96,23 +100,23 @@ create table public.clock_entries (
 
 -- ─── MARKET OFFERS (Schichtbörse) ─────────────────────────────
 create table public.market_offers (
-  id            uuid primary key default gen_random_uuid(),
-  org_id        uuid not null references public.orgs on delete cascade,
-  emp_id        uuid not null references public.employees on delete cascade,
+  id            text primary key default gen_random_uuid()::text,
+  org_id        text not null references public.orgs on delete cascade,
+  emp_id        text not null,
   month         text not null,
   day           int not null,
   shift_key     text not null,
   status        text not null default 'open'
                   check (status in ('open','taken','withdrawn')),
-  taker_id      uuid references public.employees,
+  taker_id      text,
   taken_at      timestamptz,
   created_at    timestamptz not null default now()
 );
 
 -- ─── WISHES ──────────────────────────────────────────────────
 create table public.wishes (
-  org_id        uuid not null references public.orgs on delete cascade,
-  emp_id        uuid not null references public.employees on delete cascade,
+  org_id        text not null references public.orgs on delete cascade,
+  emp_id        text not null,
   month         text not null,                 -- 'YYYY-MM'
   days          int[] not null default '{}',
   note          text not null default '',

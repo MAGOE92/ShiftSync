@@ -1,48 +1,17 @@
-// Storage-Router: wählt je nach VITE_STORAGE den passenden Adapter.
-// VITE_STORAGE=supabase → storage.supabase.js
-// (default)             → storage.local.js  (window.storage / localStorage Shim)
+// Speicher-Router: wählt zur Build-Zeit den Adapter anhand von VITE_STORAGE.
+//   VITE_STORAGE=supabase → Cloud-Gateway (zentrale DB, geräteübergreifend)
+//   sonst                 → lokal (localStorage / window.storage)
+// Beide Adapter teilen exakt dieselbe Schnittstelle:
+//   get/set/delete + login/setup/restore/switchOrg/linkOrg/unlinkOrg/chpin/logout + mode
 //
-// Kein top-level await → kompatibel mit esbuild IIFE (e2e-Tests).
+// Der Gateway-Client nutzt nur fetch (kein @supabase/supabase-js im Bundle),
+// daher kein Lazy-Load nötig — beide Adapter sind leichtgewichtig.
+import localDb from "./storage.local.js";
+import supaDb from "./storage.supabase.js";
 
-import localDb from './storage.local.js';
+const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
+const useSupabase = env.VITE_STORAGE === "supabase";
 
-// Zur Laufzeit ermitteln, ob Supabase gewünscht ist.
-// Sicherer Guard: import.meta.env ist in Vite definiert, in esbuild IIFE leer.
-const _isSupabase = (typeof import.meta !== 'undefined' && !!import.meta.env)
-  && import.meta.env.VITE_STORAGE === 'supabase';
-
-// Lazy-Holder für den Supabase-Adapter
-let _supaDb = null;
-const getSupaDb = async () => {
-  if (!_supaDb) {
-    const mod = await import('./storage.supabase.js');
-    _supaDb = mod.default;
-  }
-  return _supaDb;
-};
-
-// Einheitlicher Adapter: im Local-Modus direkt synchron,
-// im Supabase-Modus async mit Lazy-Load.
-const db = {
-  get: async k => {
-    if (!_isSupabase) return localDb.get(k);
-    return (await getSupaDb()).get(k);
-  },
-  set: async (k, v) => {
-    if (!_isSupabase) return localDb.set(k, v);
-    return (await getSupaDb()).set(k, v);
-  },
-  delete: async k => {
-    if (!_isSupabase) return localDb.delete(k);
-    return (await getSupaDb()).delete(k);
-  },
-  subscribe: (orgId, handlers) => {
-    if (!_isSupabase) return () => {};
-    // Asynchron subscriben — gibt sofort ein cleanup zurück
-    let unsub = () => {};
-    getSupaDb().then(d => { unsub = d.subscribe(orgId, handlers); });
-    return () => unsub();
-  },
-};
+const db = useSupabase ? supaDb : localDb;
 
 export default db;
