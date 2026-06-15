@@ -225,11 +225,12 @@ export default function App() {
 
   const doSetup = async () => {
     const ownerPin = wiz.pin.trim();
+    const asSuper = isSuper;
     try {
-      const r = await db.setup({ ...wiz, asSuper: isSuper });
+      const r = await db.setup({ ...wiz, asSuper });
       setWiz({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "", plan: "free" });
-      if (r.super) {
-        setOrgs(r.orgs); setView("super");
+      if (asSuper) {
+        if (r.orgs) setOrgs(r.orgs); setView("super");
         flash("ok", `${r.org.name} angelegt · Betriebs-ID: ${r.org.code} · Login: ${r.emp.lid} / ${ownerPin}`);
       } else {
         applySession(r);

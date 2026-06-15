@@ -488,7 +488,7 @@ async function actSetup(body: Any, session: Session | null) {
   const data = { emps: [emp], wishes: {}, scheds: {}, reqs: [], notifs: [], clock: {}, market: [] };
 
   if (asSuper) {
-    return ok({ org, emp, data, orgs: await allOrgs() });
+    return ok({ super: true, org, emp, data, orgs: await allOrgs() });
   }
   const token = await signToken({ oid: orgId, eid: empId, role: "owner", sup: false });
   return ok({ token, org, emp, data, orgs: [org] });
