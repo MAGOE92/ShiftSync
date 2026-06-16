@@ -1,0 +1,16 @@
+QA-Durchlauf aller Sichten: 6 Bugfixes (Multi-Agent-Audit + Live-Test)
+
+- Stempeluhr: todayKey nutzt jetzt LOKALES Datum statt UTC (isoDate) -
+  Nachtschichten/Mitternacht buchten sonst auf den falschen Tag (24/7-kritisch).
+- Gateway-Nebenlaeufigkeit: requests nur noch Upsert (App loescht nie Anfragen),
+  notifications/market_offers Reconcile-Delete nur auf EIGENE Zeilen des Handelnden.
+  Verhindert, dass ein veralteter Client frische Anfragen/Notifs anderer Nutzer loescht.
+- exportPayroll: genehmigten Urlaub/Krank (absMap) ueberlagern wie Anzeige/Druck/CSV -
+  Lohn-Export zeigte sonst 0 Urlaubstage + volle Stunden bei spaeter genehmigtem Urlaub.
+- seedDemo: respektiert Sitzplatz-Limit (kappt Demo-Team auf freie Plaetze) statt Tarif zu umgehen.
+- paintCell: Guard gegen undefined-Zeile (kein Crash bei MA ohne Draft-Zeile).
+- generate: Bestaetigung vor Ueberschreiben eines bereits existierenden Monatsplans.
+
+Build + 18 Unit + 8 E2E + 12 Gateway-Tests gruen. Live gegen Cloud verifiziert.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

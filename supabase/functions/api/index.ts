@@ -244,7 +244,7 @@ async function loadOrgData(orgId: string) {
 // Upserts + Löschen von Zeilen, die im Payload fehlen — exakt die Semantik
 // des lokalen "ganzes Objekt ersetzen". PINs: neue Klartext-PINs werden
 // gehasht, fehlende PINs behalten den vorhandenen Hash.
-async function saveOrgData(orgId: string, value: Any) {
+async function saveOrgData(orgId: string, value: Any, session?: Session | null) {
   const {
     emps = [], scheds = {}, reqs = [], notifs = [], clock = {}, market = [], wishes = {},
   } = value || {};
@@ -358,16 +358,26 @@ async function saveOrgData(orgId: string, value: Any) {
   }
 
   // ── Reconcile: Zeilen löschen, die der Client entfernt hat ──
-  const delNotIn = async (table: string, ids: string[]) => {
+  // Nebenläufigkeits-sicher: optional auf den handelnden Mitarbeiter (emp_id) begrenzt,
+  // damit ein veralteter Client nicht die frischen Zeilen ANDERER Nutzer löscht.
+  const delNotIn = async (table: string, ids: string[], scopeEmpId?: string) => {
     let q = db.from(table).delete().eq("org_id", orgId);
+    if (scopeEmpId) q = q.eq("emp_id", scopeEmpId);
     if (ids.length) q = q.not("id", "in", `(${ids.map(i => `"${i}"`).join(",")})`);
     const { error } = await q;
     if (error) throw new ApiError(`Aufräumen (${table}): ` + error.message, 500);
   };
+  // employees: voller Reconcile (delEmp braucht echtes Löschen; nur Management, geringe Nebenläufigkeit)
   await delNotIn("employees", empRows.map(r => r.id));
-  await delNotIn("requests", reqRows.map(r => r.id));
-  await delNotIn("notifications", notifRows.map(r => r.id));
-  await delNotIn("market_offers", marketRows.map(r => r.id));
+  // requests: NUR Upsert — die App löscht nie Anfragen (handleReq ändert nur den Status).
+  //   Kein Reconcile-Delete => keine Anfragen-Verluste bei gleichzeitigen Nutzern.
+  // notifications/market: Reconcile nur auf EIGENE Zeilen des handelnden Nutzers
+  //   (clearMyNotifs/withdrawOffer betreffen ausschließlich eigene Zeilen).
+  const eid = session && session.eid;
+  if (eid) {
+    await delNotIn("notifications", notifRows.map(r => r.id), eid);
+    await delNotIn("market_offers", marketRows.map(r => r.id), eid);
+  }
 }
 
 // Betriebe, die ein Mitarbeiter sehen darf: eigener + verknüpfte
@@ -583,7 +593,7 @@ async function actSet(body: Any, session: Session) {
       // in der App (Stempeluhr, Anfragen, Wünsche, Börse). Die Whole-State-Semantik
       // erlaubt keine feinere Prüfung ohne Diff — Mandantengrenze ist gesichert.
     }
-    await saveOrgData(orgId, value);
+    await saveOrgData(orgId, value, session);
     return ok({ ok: true });
   }
 
