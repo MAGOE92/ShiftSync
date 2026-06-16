@@ -419,6 +419,7 @@ export default function App() {
     ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, SHIFT_COLORS, SH, ACCENTS, MF, DW, PR,
     // Lib functions
     hoursOf, relTime, doICS, pm, nms, tms, rid, isoDate,
+    arbzgCheck,
     db,
   };
 

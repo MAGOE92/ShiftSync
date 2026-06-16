@@ -78,6 +78,20 @@ const ok = m => console.log("✓", m);
   if (david.lid !== "david.koch") fail(`lid nicht normalisiert: "${david.lid}"`);
   ok(`David gespeichert · lid="${david.lid}" · pin="${david.pin}" (getrimmt)`);
 
+  // ── 3b) Dienstplan anlegen → Admin-Ansicht darf NICHT abstürzen.
+  //   Regression-Guard: arbzgCheck (u.a.) muss im App-Context an AdminView durchgereicht sein.
+  //   Sobald ein Plan existiert, läuft der ArbZG-Wächter live — fehlt er im ctx, weißer Bildschirm.
+  click(byText("Planer")); await sleep(150);
+  const emptyBtn = byText("Leer & selbst erstellen") || byText("selbst erstellen");
+  if (!emptyBtn) fail("Planer: Button 'Leer & selbst erstellen' nicht gefunden");
+  click(emptyBtn); await sleep(300);
+  const bodyTxt = document.body.textContent || "";
+  if (bodyTxt.length < 200 || !/Stundenkonto|Compliance|Stunden/i.test(bodyTxt)) {
+    fail("Admin-Ansicht nach Planerstellung abgestürzt (arbzgCheck/ctx?): body=" + bodyTxt.slice(0, 200));
+  }
+  if (!byText("Team")) fail("Nach Planerstellung ist die Admin-Navigation verschwunden (Crash)");
+  ok("Dienstplan angelegt · Admin-Ansicht rendert (ArbZG-Wächter live, kein Crash)");
+
   // ── 4) Abmelden
   click(document.querySelector('button[title="Abmelden"]') || byText("Abmelden")); await sleep(200);
   if (!byText("Anmelden")) fail("Logout führte nicht zur Login-Seite");
@@ -117,6 +131,6 @@ const ok = m => console.log("✓", m);
   if (!document.body.textContent.includes("Stempeluhr")) fail("Heilung alter Leerzeichen-PINs funktioniert nicht");
   ok("Alt-Daten mit Leerzeichen-PIN: Login heilt automatisch");
 
-  console.log("\n✅ ALLE 8 TESTS BESTANDEN — Anlegen→Login-Prozess verifiziert.");
+  console.log("\n✅ ALLE 9 TESTS BESTANDEN — Anlegen→Login→Planansicht verifiziert.");
   process.exit(0);
 })().catch(e => { console.log("❌ EXCEPTION:", e.message); process.exit(1); });
