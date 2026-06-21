@@ -27,14 +27,18 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App-Shell + statische Assets cachen
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        // API-Calls nie cachen
-        navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/functions\//, /^\/api\//],
+        // WICHTIG: index.html (App-Shell) NICHT vorab cachen und Navigationen
+        // NICHT aus dem Cache bedienen. Die App ist online-pflichtig (Cloud-Gateway),
+        // daher soll bei jedem Laden die NEUESTE HTML/JS-Version vom Netz kommen.
+        // Verhindert das „auf alter Version festhängen"-Problem komplett.
+        globPatterns: ["**/*.{js,css,ico,png,svg,woff2}"], // ohne html
+        navigateFallback: null,                            // keine Cache-First-Shell
+        cleanupOutdatedCaches: true,                       // alte Precaches entsorgen
+        clientsClaim: true,
+        skipWaiting: true,
         runtimeCaching: [
           {
-            // Google Fonts cachen
+            // Nur Google Fonts dürfen dauerhaft im Cache bleiben
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
             handler: "CacheFirst",
             options: {
