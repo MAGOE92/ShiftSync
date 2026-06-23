@@ -300,6 +300,7 @@ export default function App() {
   const handleReq = async (id, status, note) => { const req = reqList.find(r => r.id === id); const tL = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }[req?.type] || "Anfrage"; const nt = buildNotifs(req ? [{ uid: req.uid, type: status === "ok" ? "decision_ok" : "decision_no", text: `${tL} ${status === "ok" ? "genehmigt ✓" : "abgelehnt"}${note ? ` · „${note}"` : ""}` }] : []); await saveData({ ...data, reqs: reqList.map(r => r.id === id ? { ...r, status, decidedAt: Date.now(), decidedBy: me.id, decisionNote: note || "" } : r), notifs: [...allNotifs, ...nt] }); setEditReq(null); setDecNote(""); flash("ok", status === "ok" ? "Genehmigt ✓" : "Abgelehnt"); };
   const saveOrgEdits = async () => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, ...orgEd } : o)); setOrgEd(null); flash("ok", "Betrieb gespeichert ✓"); };
   const setAccent = async c => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, accent: c } : o)); flash("ok", "Akzentfarbe übernommen"); };
+  const setTimeclock = async v => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, timeclock: v } : o)); flash("ok", "Stempeluhr-Einstellung gespeichert ✓"); };
   const saveShift = async () => { const s = editShift; if (!s.label.trim() || !s.key.trim()) { flash("er", "Bezeichnung und Kürzel nötig"); return; } const newShifts = s.idx === undefined ? [...shiftDefs, s] : shiftDefs.map((x, i) => i === s.idx ? s : x); await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, shifts: newShifts } : o)); setEditShift(null); flash("ok", "Schichtmodell gespeichert ✓"); };
   const delShift = async idx => { const newShifts = shiftDefs.filter((_, i) => i !== idx); await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, shifts: newShifts } : o)); flash("ok", "Schichtmodell entfernt"); };
   const addHoliday = async () => { if (!holidayDate || !holidayName.trim()) { flash("er", "Datum und Name nötig"); return; } const newH = [...holidays, { date: holidayDate, name: holidayName.trim() }]; await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, holidays: newH } : o)); setHolidayDate(""); setHolidayName(""); flash("ok", "Sperrtag hinzugefügt ✓"); };
@@ -344,6 +345,7 @@ export default function App() {
       flash("ok", "PIN geändert ✓");
     } catch (e) { flash("er", e.message || "PIN-Änderung fehlgeschlagen"); }
   };
+  const cancelRq = async (reqId) => { await saveData({ ...data, reqs: reqList.map(r => r.id === reqId ? { ...r, status: "cancelled" } : r) }); flash("ok", "Anfrage zurückgezogen"); };
   const submitRq = async () => { const r = { id: rid(), type: rqForm.type, uid: me.id, status: "pending", at: Date.now(), note: rqForm.note }; if (rqForm.type === "sick") { if (!rqForm.fromDate) { flash("er", "Datum"); return; } r.fromDate = rqForm.fromDate; r.toDate = rqForm.toDate || rqForm.fromDate; r.dates = datesBetween(r.fromDate, r.toDate); } else if (rqForm.type === "vac") { if (!rqForm.dates.length) { flash("er", "Tage wählen"); return; } r.dates = rqForm.dates; } else if (rqForm.type === "swap") { if (!rqForm.fromDate || !rqForm.toId || !rqForm.toDate) { flash("er", "Alle Felder"); return; } r.date = rqForm.fromDate; r.toId = rqForm.toId; r.toDate = rqForm.toDate; } const tL2 = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }[r.type]; const mgrs = emps.filter(e => e.role === "owner" || e.role === "director" || e.role === "manager").map(m => ({ uid: m.id, type: "newreq", text: `Neue ${tL2}-Anfrage von ${me.name}` })); const swapN = r.type === "swap" && r.toId ? [{ uid: r.toId, type: "swap", text: `${me.name} möchte mit dir tauschen: ${r.date} ↔ ${r.toDate}` }] : []; const nt = buildNotifs([...mgrs, ...swapN]); await saveData({ ...data, reqs: [...reqList, r], notifs: [...allNotifs, ...nt] }); setRqForm({ type: "vac", dates: [], note: "", toId: "", toDate: "", fromDate: "", vacMonth: "" }); flash("ok", "Anfrage gesendet ✓"); setRqTab("sent"); };
 
   const today = new Date(), cm = tms(), nm = nms();
@@ -404,8 +406,8 @@ export default function App() {
     seedDemo, addEmp, saveEf, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
     doClock, istHoursMonth, exportPayroll, offerShift, withdrawOffer, takeShift,
-    handleReq, saveOrgEdits, setAccent, saveShift, delShift, addHoliday, delHoliday,
-    setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq,
+    handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
+    setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq,
     buildNotifs, markAllRead, markNotifRead, clearMyNotifs,
     setOrgStatus, setOrgPlan, startCheckout,
     // Style helpers

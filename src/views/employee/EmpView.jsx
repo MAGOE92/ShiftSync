@@ -16,13 +16,27 @@ export default function EmpView() {
     getShiftInfo, shBg, shC, shX, doICS,
     setIsSuper, setWasSuper, setOrgId, setMe, setView, setATab,
     flash, logout, doClock, offerShift, withdrawOffer, takeShift,
-    saveWishes, togWish, loadWishes, savePref, doChPin, submitRq,
+    saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq,
     pm, nms,
     Tst, DarkBtn, NotifBell, NotifPanel, Header, TabBar, Avatar,
   } = useApp();
 
   // Wunschfrei-Tage aus gespeicherten Daten laden, sobald der Tab geöffnet wird
   useEffect(() => { if (rqTab === "wish") loadWishes(wishMonth); }, [rqTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  const MonthNav = ({ value, onChange, min }) => {
+    const { y, m0 } = pm(value);
+    const prev = adjMonth(value, -1);
+    const canPrev = !min || prev >= min;
+    return (
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 8, background: T.bg2, borderRadius: 10, overflow: "hidden" }}>
+        <button style={{ background: "transparent", border: "none", cursor: canPrev ? "pointer" : "not-allowed", padding: "10px 16px", color: canPrev ? T.tx : T.tx2, fontSize: 16, fontWeight: 700 }} disabled={!canPrev} onClick={() => canPrev && onChange(prev)}>‹</button>
+        <div style={{ flex: 1, textAlign: "center", fontWeight: 700, fontSize: 13, color: T.tx }}>{MF[m0]} {y}</div>
+        <button style={{ background: "transparent", border: "none", cursor: "pointer", padding: "10px 16px", color: T.tx, fontSize: 16, fontWeight: 700 }} onClick={() => onChange(adjMonth(value, 1))}>›</button>
+      </div>
+    );
+  };
 
   const myRqs = reqList.filter(r => r.uid === me.id);
   const myPlanCur = scheds[cm]?.[me.id] || null;
@@ -91,7 +105,7 @@ export default function EmpView() {
       <div style={{ padding: 16, maxWidth: 540, margin: "0 auto" }}>
 
         {eTab === "home" && <div>
-          <div style={{ ...crd, marginBottom: 12, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          {(org.timeclock ?? 'self') !== 'off' && <div style={{ ...crd, marginBottom: 12, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 150 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 700, fontSize: 14 }}><Icon n="clock" s={16} />Stempeluhr</div>
               <div style={{ fontSize: 12, color: T.tx2, marginTop: 3 }}>
@@ -105,7 +119,7 @@ export default function EmpView() {
             {(!myStamp || myStamp.out)
               ? <button style={btn("p")} onClick={doClock} disabled={!!myStamp?.out} title={myStamp?.out ? "Heute bereits ausgestempelt" : ""}><Icon n="clock" s={15} />{myStamp?.out ? "Erfasst" : "Einstempeln"}</button>
               : <button style={btn("er")} onClick={doClock}><Icon n="clock" s={15} />Ausstempeln</button>}
-          </div>
+          </div>}
           <div style={{ ...crd, marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 6, flexWrap: "wrap" }}>
               <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Nächste Schichten</h3>
@@ -184,9 +198,7 @@ export default function EmpView() {
             {rqForm.type === "sick" && <><label style={lbl}>Von</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e => setRqForm(p => ({ ...p, fromDate: e.target.value }))} /><label style={lbl}>Bis (optional)</label><input style={inp} type="date" value={rqForm.toDate} onChange={e => setRqForm(p => ({ ...p, toDate: e.target.value }))} /></>}
             {rqForm.type === "vac" && <>
               <label style={lbl}>Monat</label>
-              <input style={{ ...inp, marginBottom: 6 }} type="month" min={cm}
-                value={rqForm.vacMonth || nm}
-                onChange={e => setRqForm(p => ({ ...p, vacMonth: e.target.value }))} />
+              <MonthNav value={rqForm.vacMonth || nm} min={cm} onChange={v => setRqForm(p => ({ ...p, vacMonth: v, dates: [] }))} />
               <label style={lbl}>Urlaubstage ({rqForm.dates.length})</label>
               <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 4px" }}>Wähle einen oder mehrere Tage aus beliebig vielen Monaten. Sperrtage sind ausgeschlossen.</p>
               {(() => {
@@ -210,10 +222,8 @@ export default function EmpView() {
           </div>}
 
           {rqTab === "wish" && <div style={crd}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Wunschfrei</h3>
-              <input type="month" value={wishMonth} onChange={e => { setWishMonth(e.target.value); loadWishes(e.target.value); }} style={{ ...inp, width: "auto", fontSize: 12, padding: "5px 9px" }} />
-            </div>
+            <h3 style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 700 }}>Wunschfrei</h3>
+            <MonthNav value={wishMonth} onChange={v => { setWishMonth(v); loadWishes(v); }} />
             <p style={{ margin: "0 0 12px", color: T.tx2, fontSize: 12 }}>Bis zu 3 Tage ({wsel.length}/3). Sperrtage sind ausgeschlossen.</p>
             {(() => {
               const { y, m0, days: wd } = pm(wishMonth);
@@ -258,13 +268,18 @@ export default function EmpView() {
               {!myRqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "16px 0", margin: 0, fontSize: 13 }}>Keine Anfragen.</p>}
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[...myRqs].reverse().map(r => {
-                  const sL = { pending: [T.w, T.wT, "⏳ Offen"], ok: [T.ok, T.okT, "✓ Genehmigt"], no: [T.er, T.erT, "✗ Abgelehnt"] };
+                  const sL = { pending: [T.w, T.wT, "⏳ Offen"], ok: [T.ok, T.okT, "✓ Genehmigt"], no: [T.er, T.erT, "✗ Abgelehnt"], cancelled: [T.bg2, T.tx2, "⊘ Zurückgezogen"] };
                   const [bg, col, l] = sL[r.status] || sL.pending;
                   return (<div key={r.id} style={{ padding: "10px 13px", background: bg, borderRadius: 11 }}>
                     <div style={{ fontWeight: 700, fontSize: 13, color: col }}>{{ sick: "Krankmeldung", vac: "Urlaub", swap: "Tausch" }[r.type]}</div>
                     <div style={{ fontSize: 12, color: col, opacity: .8 }}>{r.fromDate || r.dates?.slice(0, 3).join(", ") || r.date}{r.note && ` · "${r.note}"`}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: col, marginTop: 2 }}>{l}</div>
                     {r.decisionNote && <div style={{ fontSize: 11, color: col, marginTop: 4, fontStyle: "italic" }}>Antwort: {r.decisionNote}</div>}
+                    {r.status === "pending" && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                      <button style={btn("s", true)} onClick={() => cancelRq(r.id)}>Zurückziehen</button>
+                      <button style={btn("bl", true)} onClick={() => { setRqForm({ type: r.type, dates: r.dates || [], note: r.note || "", toId: r.toId || "", toDate: r.toDate || r.date || "", fromDate: r.fromDate || r.date || "", vacMonth: r.dates?.length ? r.dates[0].slice(0, 7) : "" }); cancelRq(r.id); setRqTab("new"); }}>Bearbeiten</button>
+                    </div>}
+                    {r.status === "ok" && r.type === "vac" && <button style={{ ...btn("w", true), marginTop: 8 }} onClick={() => { setRqForm({ type: "sick", dates: [], note: `Krank während Urlaub (ab ${r.dates?.[0] || ""})`, toId: "", toDate: r.dates?.[r.dates.length - 1] || "", fromDate: r.dates?.[0] || "", vacMonth: "" }); setRqTab("new"); }}>Krank während Urlaub melden</button>}
                   </div>);
                 })}
               </div>

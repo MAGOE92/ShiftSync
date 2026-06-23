@@ -1,0 +1,1 @@
+ALTER TABLE public.orgs ADD COLUMN IF NOT EXISTS timeclock TEXT NOT NULL DEFAULT 'self';

@@ -22,7 +22,7 @@ export default function AdminView() {
     flash,
     seedDemo, addEmp, saveEf, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
-    exportPayroll, handleReq, saveOrgEdits, setAccent, saveShift, delShift,
+    exportPayroll, handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift,
     addHoliday, delHoliday, setPerm, printPlan, exportCSV,
     setOrgStatus, setOrgPlan, setIsSuper, setWasSuper, setOrgId, setData, setMe, setView,
     startCheckout, logout,
@@ -297,6 +297,16 @@ export default function AdminView() {
               {ACCENTS.map(c => { const active = (org.accent || "#4f46e5") === c; return <button key={c} onClick={() => setAccent(c)} title={c} style={{ width: 32, height: 32, borderRadius: 9, background: c, cursor: "pointer", border: active ? `2.5px solid ${T.tx}` : `1px solid ${T.bord2}`, display: "flex", alignItems: "center", justifyContent: "center" }}>{active && <Icon n="check" s={15} style={{ color: "#fff" }} />}</button>; })}
             </div>
             <div style={{ marginTop: 14, padding: "11px 13px", background: T.bg2, borderRadius: 10, fontSize: 12, color: T.tx2, display: "flex", alignItems: "center", gap: 8 }}><Icon n="building" s={15} /><span>Betriebs-ID für Logins: <strong style={{ fontFamily: "ui-monospace,monospace", color: T.acc, letterSpacing: 1.5 }}>{org.code}</strong></span></div>
+          </div>}
+
+          {(isOwner || can("manageOrg")) && <div style={{ ...crd, marginBottom: 12 }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Zeiterfassung</h3>
+            <label style={lbl}>Stempeluhr für Mitarbeiter</label>
+            <select style={inp} value={org.timeclock ?? 'self'} onChange={e => setTimeclock(e.target.value)}>
+              <option value="self">Aktiviert — Mitarbeiter können stempeln</option>
+              <option value="off">Deaktiviert — Stempeluhr wird nicht angezeigt</option>
+            </select>
+            <p style={{ fontSize: 11, color: T.tx2, margin: "4px 0 0" }}>Manche Betriebe benötigen keine Zeiterfassung. Die Einstellung wirkt sofort.</p>
           </div>}
 
           {isOwner && <div style={{ ...crd, marginBottom: 12 }}>

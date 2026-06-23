@@ -157,7 +157,7 @@ function mapOrg(row: Any) {
     shifts: row.shifts || [], holidays: row.holidays || [], perms: row.perms || {},
     status: row.status, plan: row.plan,
     trialEnds: row.trial_ends ? new Date(row.trial_ends).getTime() : null,
-    accent: row.accent,
+    accent: row.accent, timeclock: row.timeclock || 'self',
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
   };
 }
@@ -591,7 +591,7 @@ const MGMT = ["owner", "director", "manager"];
 // Felder, die ein Betrieb an sich selbst ändern darf (KEIN plan/status/code/trialEnds!)
 const ORG_SELF_FIELDS: Record<string, string> = {
   name: "name", sub: "sub", weekStdHours: "week_std_hours",
-  shifts: "shifts", holidays: "holidays", perms: "perms", accent: "accent",
+  shifts: "shifts", holidays: "holidays", perms: "perms", accent: "accent", timeclock: "timeclock",
 };
 
 async function actSet(body: Any, session: Session) {
