@@ -128,19 +128,31 @@ export default function App() {
     })();
   }, []);
 
+  const loadOrgData = async (id) => {
+    const d = await db.get(`org_${id}`);
+    const safe = d || { emps: [], wishes: {}, scheds: {}, reqs: [] };
+    if (!Array.isArray(safe.reqs)) safe.reqs = [];
+    if (!Array.isArray(safe.emps)) safe.emps = [];
+    if (!safe.wishes) safe.wishes = {};
+    if (!safe.scheds) safe.scheds = {};
+    if (!Array.isArray(safe.notifs)) safe.notifs = [];
+    return safe;
+  };
+
   useEffect(() => {
-    (async () => {
-      if (!orgId) return;
-      const d = await db.get(`org_${orgId}`);
-      const safe = d || { emps: [], wishes: {}, scheds: {}, reqs: [] };
-      if (!Array.isArray(safe.reqs)) safe.reqs = [];
-      if (!Array.isArray(safe.emps)) safe.emps = [];
-      if (!safe.wishes) safe.wishes = {};
-      if (!safe.scheds) safe.scheds = {};
-      if (!Array.isArray(safe.notifs)) safe.notifs = [];
-      setData(safe);
-    })();
+    if (!orgId) return;
+    loadOrgData(orgId).then(setData);
   }, [orgId]);
+
+  // Polling: alle 30s frische Daten holen (kein Realtime im Gateway-Modell).
+  // Pausiert im Bearbeitungsmodus damit kein Draft überschrieben wird.
+  useEffect(() => {
+    if (!orgId || db.mode !== "supabase") return;
+    const id = setInterval(() => {
+      if (!editMode) loadOrgData(orgId).then(setData);
+    }, 30000);
+    return () => clearInterval(id);
+  }, [orgId, editMode]);
 
   const saveOrgs = async o => { setOrgs(o); await db.set("orgs", o); };
   const updOrg = async (id, patch) => { await saveOrgs(orgs.map(o => o.id === id ? { ...o, ...patch } : o)); };
@@ -403,6 +415,7 @@ export default function App() {
     market, clockData, myStamp, isMobile,
     // Actions
     flash, saveOrgs, updOrg, saveCfg, saveData, togDark, logout, doLogin, doSetup,
+    refreshData: () => orgId && loadOrgData(orgId).then(d => { setData(d); flash("ok", "Aktualisiert ✓"); }),
     seedDemo, addEmp, saveEf, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
     doClock, istHoursMonth, exportPayroll, offerShift, withdrawOffer, takeShift,

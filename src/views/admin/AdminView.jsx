@@ -22,7 +22,7 @@ export default function AdminView() {
     flash,
     seedDemo, addEmp, saveEf, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
-    exportPayroll, handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift,
+    refreshData, exportPayroll, handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift,
     addHoliday, delHoliday, setPerm, printPlan, exportCSV,
     setOrgStatus, setOrgPlan, setIsSuper, setWasSuper, setOrgId, setData, setMe, setView,
     startCheckout, logout,
@@ -174,8 +174,9 @@ export default function AdminView() {
 
         {aTab === "reqs" && <div>
           <div style={{ ...crd, marginBottom: 12 }}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               {[["pending", `⏳ Offen (${reqs.filter(r => r.status === "pending").length})`], ["ok", `✓ Genehmigt (${reqs.filter(r => r.status === "ok").length})`], ["no", `✗ Abgelehnt (${reqs.filter(r => r.status === "no").length})`], ["all", "Alle (Archiv)"]].map(([k, l]) => <button key={k} style={btn(reqFilter === k ? "p" : "s", true)} onClick={() => setReqFilter(k)}>{l}</button>)}
+              <button style={{ ...btn("s", true), marginLeft: "auto" }} onClick={refreshData} title="Neu laden"><Icon n="repeat" s={14} /></button>
             </div>
           </div>
           <div style={crd}>
