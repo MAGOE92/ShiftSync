@@ -222,9 +222,12 @@ export default function EmpView() {
             {rqForm.type === "sick" && <><label style={lbl}>Von</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e => setRqForm(p => ({ ...p, fromDate: e.target.value }))} /><label style={lbl}>Bis (optional)</label><input style={inp} type="date" value={rqForm.toDate} onChange={e => setRqForm(p => ({ ...p, toDate: e.target.value }))} /></>}
             {rqForm.type === "vac" && <>
               <label style={lbl}>Monat</label>
-              <MonthNav value={rqForm.vacMonth || nm} min={cm} onChange={v => setRqForm(p => ({ ...p, vacMonth: v, dates: [] }))} />
-              <label style={lbl}>Urlaubstage ({rqForm.dates.length})</label>
-              <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 4px" }}>Wähle einen oder mehrere Tage aus beliebig vielen Monaten. Sperrtage sind ausgeschlossen.</p>
+              <MonthNav value={rqForm.vacMonth || nm} min={cm} onChange={v => setRqForm(p => ({ ...p, vacMonth: v }))} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                <label style={{ ...lbl, margin: 0 }}>Urlaubstage ({rqForm.dates.length})</label>
+                {rqForm.dates.length > 0 && <button style={{ ...btn("s", true), fontSize: 10, padding: "2px 8px" }} onClick={() => setRqForm(p => ({ ...p, dates: [] }))}>Alle löschen</button>}
+              </div>
+              <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 4px" }}>Wähle Tage über mehrere Monate — navigiere mit den Pfeilen. Sperrtage sind ausgeschlossen.</p>
               {(() => {
                 const vacM = pm(rqForm.vacMonth || nm);
                 return <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginTop: 4 }}>
@@ -236,6 +239,14 @@ export default function EmpView() {
                     const blocked = holidays.some(h => h.date === ds);
                     return (<button key={d} disabled={blocked} onClick={() => setRqForm(p => ({ ...p, dates: sel ? p.dates.filter(x => x !== ds) : [...p.dates, ds] }))} style={{ aspectRatio: "1", borderRadius: 7, border: "none", cursor: blocked ? "not-allowed" : "pointer", fontSize: 11, fontWeight: sel ? 700 : 400, background: blocked ? T.er : sel ? T.invBg : T.bg2, color: blocked ? T.erT : sel ? T.inv : T.tx, opacity: blocked ? .5 : 1 }}>{d}</button>);
                   })}
+                </div>;
+              })()}
+              {rqForm.dates.length > 0 && (() => {
+                const sorted = [...rqForm.dates].sort();
+                const byMonth = {};
+                sorted.forEach(ds => { const mo = ds.slice(0, 7); if (!byMonth[mo]) byMonth[mo] = []; byMonth[mo].push(Number(ds.slice(8))); });
+                return <div style={{ marginTop: 8, padding: "8px 10px", background: T.bg2, borderRadius: 8, fontSize: 11, color: T.tx2 }}>
+                  {Object.entries(byMonth).map(([mo, days]) => { const { y, m0 } = pm(mo); return <div key={mo}><strong style={{ color: T.tx }}>{MF[m0]} {y}:</strong> {days.join(", ")}</div>; })}
                 </div>;
               })()}
             </>}
