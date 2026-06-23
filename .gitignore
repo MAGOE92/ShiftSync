@@ -9,6 +9,7 @@ dist-ssr/
 .env
 .env.local
 .env.*.local
+.env.prod.check
 
 # Test-Artefakte
 bundle.tmp.js
