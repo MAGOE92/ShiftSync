@@ -220,36 +220,42 @@ export default function EmpView() {
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Anfrage stellen</h3>
             <label style={lbl}>Art</label><select style={inp} value={rqForm.type} onChange={e => setRqForm(p => ({ ...p, type: e.target.value }))}><option value="vac">Urlaubsantrag</option><option value="sick">Krankmeldung</option><option value="swap">Schichttausch</option></select>
             {rqForm.type === "sick" && <><label style={lbl}>Von</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e => setRqForm(p => ({ ...p, fromDate: e.target.value }))} /><label style={lbl}>Bis (optional)</label><input style={inp} type="date" value={rqForm.toDate} onChange={e => setRqForm(p => ({ ...p, toDate: e.target.value }))} /></>}
-            {rqForm.type === "vac" && <>
-              <label style={lbl}>Monat</label>
-              <MonthNav value={rqForm.vacMonth || nm} min={cm} onChange={v => setRqForm(p => ({ ...p, vacMonth: v }))} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                <label style={{ ...lbl, margin: 0 }}>Urlaubstage ({rqForm.dates.length})</label>
-                {rqForm.dates.length > 0 && <button style={{ ...btn("s", true), fontSize: 10, padding: "2px 8px" }} onClick={() => setRqForm(p => ({ ...p, dates: [] }))}>Alle löschen</button>}
-              </div>
-              <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 4px" }}>Wähle Tage über mehrere Monate — navigiere mit den Pfeilen. Sperrtage sind ausgeschlossen.</p>
-              {(() => {
-                const vacM = pm(rqForm.vacMonth || nm);
-                return <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginTop: 4 }}>
-                  {DW.map(d => <div key={d} style={{ textAlign: "center", fontSize: 9, color: T.tx2, padding: "2px 0" }}>{d}</div>)}
-                  {Array.from({ length: new Date(vacM.y, vacM.m0, 1).getDay() }, (_, i) => <div key={`e${i}`} />)}
-                  {Array.from({ length: vacM.days }, (_, i) => {
-                    const d = i + 1, ds = `${vacM.y}-${String(vacM.m0 + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-                    const sel = rqForm.dates.includes(ds);
-                    const blocked = holidays.some(h => h.date === ds);
-                    return (<button key={d} disabled={blocked} onClick={() => setRqForm(p => ({ ...p, dates: sel ? p.dates.filter(x => x !== ds) : [...p.dates, ds] }))} style={{ aspectRatio: "1", borderRadius: 7, border: "none", cursor: blocked ? "not-allowed" : "pointer", fontSize: 11, fontWeight: sel ? 700 : 400, background: blocked ? T.er : sel ? T.invBg : T.bg2, color: blocked ? T.erT : sel ? T.inv : T.tx, opacity: blocked ? .5 : 1 }}>{d}</button>);
-                  })}
-                </div>;
-              })()}
-              {rqForm.dates.length > 0 && (() => {
-                const sorted = [...rqForm.dates].sort();
-                const byMonth = {};
-                sorted.forEach(ds => { const mo = ds.slice(0, 7); if (!byMonth[mo]) byMonth[mo] = []; byMonth[mo].push(Number(ds.slice(8))); });
-                return <div style={{ marginTop: 8, padding: "8px 10px", background: T.bg2, borderRadius: 8, fontSize: 11, color: T.tx2 }}>
-                  {Object.entries(byMonth).map(([mo, days]) => { const { y, m0 } = pm(mo); return <div key={mo}><strong style={{ color: T.tx }}>{MF[m0]} {y}:</strong> {days.join(", ")}</div>; })}
-                </div>;
-              })()}
-            </>}
+            {rqForm.type === "vac" && (() => {
+              const datesBetween = (from, to) => { const a = []; for (let d = new Date(from + "T12:00:00"); d <= new Date(to + "T12:00:00"); d.setDate(d.getDate() + 1)) a.push(d.toISOString().slice(0, 10)); return a; };
+              const autoFill = (from, to) => {
+                if (!from || !to || from > to) return;
+                const all = datesBetween(from, to).filter(ds => !holidays.some(h => h.date === ds));
+                setRqForm(p => ({ ...p, dates: all }));
+              };
+              const sorted = [...rqForm.dates].sort();
+              const fmtD = ds => { const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; };
+              const today0 = today.toISOString().slice(0, 10);
+              return <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbl}>Von</label>
+                    <input style={inp} type="date" min={today0} value={rqForm.fromDate}
+                      onChange={e => { setRqForm(p => ({ ...p, fromDate: e.target.value })); autoFill(e.target.value, rqForm.toDate); }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbl}>Bis</label>
+                    <input style={inp} type="date" min={rqForm.fromDate || today0} value={rqForm.toDate}
+                      onChange={e => { setRqForm(p => ({ ...p, toDate: e.target.value })); autoFill(rqForm.fromDate, e.target.value); }} />
+                  </div>
+                </div>
+                {rqForm.dates.length > 0 && <div style={{ padding: "10px 12px", background: T.ok, borderRadius: 10, marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: T.okT, marginBottom: 4 }}>{rqForm.dates.length} Urlaubstage ausgewählt</div>
+                  <div style={{ fontSize: 11, color: T.okT, opacity: .85 }}>
+                    {sorted.length === 1 ? fmtD(sorted[0]) : `${fmtD(sorted[0])} – ${fmtD(sorted[sorted.length - 1])}`}
+                    {holidays.some(h => rqForm.fromDate && rqForm.toDate && h.date >= rqForm.fromDate && h.date <= rqForm.toDate) && <span style={{ marginLeft: 6, opacity: .7 }}>(Sperrtage ausgeschlossen)</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    {sorted.map(ds => <button key={ds} onClick={() => setRqForm(p => ({ ...p, dates: p.dates.filter(x => x !== ds) }))} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: `1px solid ${T.okT}40`, background: "transparent", color: T.okT, cursor: "pointer" }}>{fmtD(ds)} ×</button>)}
+                  </div>
+                </div>}
+                {(!rqForm.fromDate || !rqForm.toDate) && <p style={{ fontSize: 11, color: T.tx2, margin: "0 0 8px" }}>Von- und Bis-Datum wählen — alle Tage dazwischen werden automatisch übernommen.</p>}
+              </>;
+            })()}
             {rqForm.type === "swap" && <><label style={lbl}>Mein Tag</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e => setRqForm(p => ({ ...p, fromDate: e.target.value }))} /><label style={lbl}>Mit wem</label><select style={inp} value={rqForm.toId} onChange={e => setRqForm(p => ({ ...p, toId: e.target.value }))}><option value="">– Kollege –</option>{emps.filter(e => e.id !== me.id).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select><label style={lbl}>Deren Tag</label><input style={inp} type="date" value={rqForm.toDate} onChange={e => setRqForm(p => ({ ...p, toDate: e.target.value }))} /></>}
             <label style={lbl}>Begründung / Notiz</label>
             <textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} placeholder="Hilft der Führungskraft bei der Entscheidung" value={rqForm.note} onChange={e => setRqForm(p => ({ ...p, note: e.target.value }))} />
