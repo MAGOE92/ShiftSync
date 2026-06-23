@@ -1,5 +1,6 @@
 import { useApp } from "../../App.jsx";
 import { Icon } from "../../theme/icons.jsx";
+import { useState } from "react";
 
 export default function AdminView() {
   const {
@@ -19,8 +20,8 @@ export default function AdminView() {
     ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, SHIFT_COLORS, ACCENTS, MF, DW, PR,
     T: theme, hoursOf, pm, nms,
     getShiftInfo, shBg, shC, shX, calcHours, targetHours, fmtH,
-    flash,
-    seedDemo, addEmp, saveEf, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
+    flash, clockData,
+    seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
     refreshData, exportPayroll, handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift,
     addHoliday, delHoliday, setPerm, printPlan, exportCSV,
@@ -30,6 +31,10 @@ export default function AdminView() {
     isMobile,
     arbzgCheck,
   } = useApp();
+
+  const [hrEmp, setHrEmp] = useState(null);
+  const [hrTab, setHrTab] = useState("overview");
+  const [hrEf, setHrEf] = useState({});
 
   const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const MonthNav = ({ value, onChange }) => {
@@ -119,6 +124,141 @@ export default function AdminView() {
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("er"), flex: 1 }} onClick={() => handleReq(editReq.req.id, "no", decNote)}>✗ Ablehnen</button><button style={{ ...btn("ok"), flex: 1 }} onClick={() => handleReq(editReq.req.id, "ok", decNote)}>✓ Genehmigen</button></div>
       </div></div>}
 
+      {hrEmp && (() => {
+        const thisYear = today.getFullYear();
+        const yearStr = String(thisYear);
+
+        // Resturlaub
+        const annualVac = Number(hrEmp.vacDays || 24);
+        const vacCarry = Number(hrEmp.vacCarry || 0);
+        const usedVac = reqs.filter(r => r.uid === hrEmp.id && r.status === "ok" && r.type === "vac" && r.dates?.some(d => d.startsWith(yearStr))).reduce((s, r) => s + (r.dates?.filter(d => d.startsWith(yearStr)).length || 0), 0);
+        const vacLeft = annualVac + vacCarry - usedVac;
+
+        // Kranktage dieses Jahr
+        const sickDays = reqs.filter(r => r.uid === hrEmp.id && (r.status === "ok" || r.status === "pending") && r.type === "sick" && (r.dates?.some(d => d.startsWith(yearStr)) || (r.fromDate || "").startsWith(yearStr))).reduce((s, r) => s + (r.dates?.filter(d => d.startsWith(yearStr)).length || 1), 0);
+
+        // Überstunden: pro Monat soll vs ist
+        const monthKeys = Object.keys(scheds).sort();
+        const overtimeRows = monthKeys.map(ym => {
+          const { y, m0, days: dInM } = pm(ym);
+          const row = scheds[ym]?.[hrEmp.id] || [];
+          const ist = calcHours(row);
+          const soll = targetHours(hrEmp, dInM);
+          return { ym, label: `${MF[m0]} ${y}`, ist, soll, diff: ist - soll };
+        }).filter(r => r.ist > 0 || r.soll > 0);
+        const totalOT = overtimeRows.reduce((s, r) => s + r.diff, 0);
+
+        // Stempeluhr-Stunden gesamt (alle clock-Daten für diesen MA)
+        let clockTotal = 0;
+        Object.entries(clockData).forEach(([, empMap]) => {
+          const entry = empMap?.[hrEmp.id];
+          if (entry?.in && entry?.out) {
+            const diff = (new Date(entry.out) - new Date(entry.in)) / 3600000;
+            if (diff > 0 && diff < 16) clockTotal += diff;
+          }
+        });
+
+        const saveHr = async () => {
+          await patchEmp(hrEmp.id, hrEf);
+          setHrEmp(p => ({ ...p, ...hrEf }));
+          flash("ok", "Stammdaten gespeichert ✓");
+        };
+
+        const kpi = (label, value, color, sub) => (
+          <div style={{ padding: "12px 14px", background: T.bg2, borderRadius: 12 }}>
+            <div style={{ fontSize: 10.5, color: T.tx2, marginBottom: 6 }}>{label}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: color || T.tx, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{value}</div>
+            {sub && <div style={{ fontSize: 10, color: T.tx2, marginTop: 4 }}>{sub}</div>}
+          </div>
+        );
+
+        return (
+          <div style={ovl} onClick={() => setHrEmp(null)}>
+            <div style={{ ...crd, width: "100%", maxWidth: 480, maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 0 }} onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <Avatar emp={hrEmp} size={44} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{hrEmp.name}</div>
+                  <div style={{ fontSize: 11, color: T.tx2 }}>{ROLES[hrEmp.role || "staff"]?.l} · {hrEmp.lid} · {hrEmp.workPct || 100}%</div>
+                  {hrEmp.startDate && <div style={{ fontSize: 11, color: T.tx2 }}>seit {new Date(hrEmp.startDate + "T12:00:00").toLocaleDateString("de-DE")}</div>}
+                </div>
+                <button style={{ ...btn("s", true), padding: "5px 9px" }} onClick={() => setHrEmp(null)}>✕</button>
+              </div>
+
+              {/* Tabs */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 14, background: T.bg2, borderRadius: 10, padding: 4 }}>
+                {[["overview", "Übersicht"], ["stamm", "Stammdaten"], ["history", "Verlauf"]].map(([k, l]) => (
+                  <button key={k} onClick={() => setHrTab(k)} style={{ flex: 1, padding: "7px 0", border: "none", borderRadius: 8, background: hrTab === k ? T.card : "transparent", color: hrTab === k ? T.tx : T.tx2, fontWeight: hrTab === k ? 700 : 400, fontSize: 12, cursor: "pointer" }}>{l}</button>
+                ))}
+              </div>
+
+              {hrTab === "overview" && <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                  {kpi("Resturlaub " + thisYear, vacLeft < 0 ? vacLeft : "+" + vacLeft + " Tage", vacLeft < 0 ? T.erT : vacLeft <= 5 ? T.wT : T.okT, `${usedVac} von ${annualVac + vacCarry} Tagen genutzt${vacCarry ? ` (inkl. ${vacCarry} Übertrag)` : ""}`)}
+                  {kpi("Kranktage " + thisYear, sickDays + " Tage", sickDays >= 10 ? T.erT : sickDays >= 5 ? T.wT : T.tx, "genehmigte Krankmeldungen")}
+                  {kpi("Überstunden-Saldo", (totalOT >= 0 ? "+" : "") + fmtH(totalOT), totalOT > 10 ? T.okT : totalOT < -5 ? T.erT : T.tx, "kumuliert über alle Monate")}
+                  {clockTotal > 0 && kpi("Stempeluhr gesamt", fmtH(clockTotal), T.tx, "erfasste Arbeitszeit")}
+                </div>
+                <div style={{ ...crd, padding: "10px 12px", marginBottom: 0, background: T.bg2, border: "none" }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Monatsübersicht Stunden</div>
+                  {!overtimeRows.length && <p style={{ fontSize: 12, color: T.tx2, margin: 0 }}>Noch keine Plandaten.</p>}
+                  {overtimeRows.map(r => (
+                    <div key={r.ym} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: `1px solid ${T.bord}` }}>
+                      <span style={{ fontSize: 12, color: T.tx2, width: 80 }}>{r.label}</span>
+                      <span style={{ fontSize: 12, flex: 1 }}>{fmtH(r.ist)} <span style={{ color: T.tx2 }}>/ {fmtH(r.soll)} Soll</span></span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: r.diff > 0 ? T.okT : r.diff < -1 ? T.erT : T.tx2 }}>{r.diff >= 0 ? "+" : ""}{fmtH(r.diff)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>}
+
+              {hrTab === "stamm" && <>
+                <label style={lbl}>Eintrittsdatum</label>
+                <input style={inp} type="date" value={hrEf.startDate ?? (hrEmp.startDate || "")} onChange={e => setHrEf(p => ({ ...p, startDate: e.target.value }))} />
+                <label style={lbl}>Jahresurlaubsanspruch (Tage)</label>
+                <input style={inp} type="number" min="0" max="40" value={hrEf.vacDays ?? (hrEmp.vacDays || 24)} onChange={e => setHrEf(p => ({ ...p, vacDays: Number(e.target.value) }))} />
+                <p style={{ fontSize: 10, color: T.tx2, margin: "-6px 0 8px" }}>Gesetzliches Minimum: 20 Tage (5-Tage-Woche).</p>
+                <label style={lbl}>Urlaubsübertrag aus Vorjahr (Tage)</label>
+                <input style={inp} type="number" min="0" max="60" value={hrEf.vacCarry ?? (hrEmp.vacCarry || 0)} onChange={e => setHrEf(p => ({ ...p, vacCarry: Number(e.target.value) }))} />
+                <label style={lbl}>HR-Notizen (nur intern, für Mitarbeiter nicht sichtbar)</label>
+                <textarea style={{ ...inp, minHeight: 80, resize: "vertical" }} value={hrEf.hrNotes ?? (hrEmp.hrNotes || "")} onChange={e => setHrEf(p => ({ ...p, hrNotes: e.target.value }))} placeholder="z. B. Gespräch am 15.3., befristeter Vertrag bis..." />
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button style={{ ...btn("s"), flex: 1 }} onClick={() => { setHrEf({}); setHrEmp(null); }}>Schließen</button>
+                  <button style={{ ...btn("p"), flex: 2 }} onClick={saveHr}>Speichern</button>
+                </div>
+              </>}
+
+              {hrTab === "history" && <>
+                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Anfragen-Verlauf</div>
+                {reqs.filter(r => r.uid === hrEmp.id).length === 0 && <p style={{ fontSize: 12, color: T.tx2 }}>Keine Anfragen vorhanden.</p>}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[...reqs.filter(r => r.uid === hrEmp.id)].reverse().map(r => {
+                    const tL = { sick: "Krankmeldung", vac: "Urlaub", swap: "Tausch" };
+                    const sL = { pending: [T.w, T.wT, "Offen"], ok: [T.ok, T.okT, "Genehmigt"], no: [T.er, T.erT, "Abgelehnt"], cancelled: [T.bg2, T.tx2, "Zurückgezogen"] };
+                    const [bg, col, sl] = sL[r.status] || sL.pending;
+                    return (
+                      <div key={r.id} style={{ padding: "9px 11px", background: T.bg2, borderRadius: 10, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700 }}>{tL[r.type] || r.type}</div>
+                          <div style={{ fontSize: 11, color: T.tx2, marginTop: 2 }}>
+                            {r.type === "vac" && `${r.dates?.length || 0} Tage${r.dates?.length ? ": " + r.dates[0] + (r.dates.length > 1 ? " …" : "") : ""}`}
+                            {r.type === "sick" && (r.fromDate || r.date || "")}
+                            {r.type === "swap" && `${r.date} ↔ ${r.toDate}`}
+                          </div>
+                          {r.decisionNote && <div style={{ fontSize: 10, color: T.tx2, marginTop: 2, fontStyle: "italic" }}>"{r.decisionNote}"</div>}
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 700, background: bg, color: col, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{sl}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>}
+            </div>
+          </div>
+        );
+      })()}
+
       {Header(<span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}><Avatar emp={me} size={30} />{me.name}</span>, `${org.name.toUpperCase()} · ${org.code}${wasSuper ? " · SUPPORT-MODUS" : ""}`, <>{DarkBtn}{NotifBell}{wasSuper && <button style={btn("pu", true)} onClick={() => { setIsSuper(true); setWasSuper(false); setOrgId(null); setMe(null); setView("super"); }}><Icon n="shield" s={14} />Konsole</button>}{(wasSuper || me.role === "owner") && <button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={() => setShowOrgs(true)} title={wasSuper ? "Kunde wechseln" : "Betrieb wechseln"}><Icon n="building" /></button>}<button style={btn("bl", true)} onClick={() => { setView("emp"); }} title="Mitarbeiter-Ansicht"><Icon n="user" /></button><button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={logout} title="Abmelden"><Icon n="logout" /></button></>)}
       {TabBar([["dash", "Übersicht", "chart"], ["staff", "Team", "users"], ["reqs", `Anfragen${pendCount ? " (" + pendCount + ")" : ""}`, "inbox"], ["sched", "Planer", "calendar"], ...((isOwner || can("manageOrg") || can("manageShifts")) ? [["settings", "Betrieb", "settings"]] : [])], aTab, setATab)}
 
@@ -179,7 +319,7 @@ export default function AdminView() {
           <div style={crd}>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Team ({emps.length})</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div>{can("manageStaff") && <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</div>}</div>); })}
+              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button style={{ ...btn("bl", true), padding: "7px 10px", fontSize: 11, fontWeight: 700 }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte öffnen"><Icon n="user" s={14} /> Akte</button>{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
             </div>
           </div>
         </div>}
