@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useApp } from "../../App.jsx";
 import { Icon } from "../../theme/icons.jsx";
 
@@ -19,6 +20,9 @@ export default function EmpView() {
     pm, nms,
     Tst, DarkBtn, NotifBell, NotifPanel, Header, TabBar, Avatar,
   } = useApp();
+
+  // Wunschfrei-Tage aus gespeicherten Daten laden, sobald der Tab geöffnet wird
+  useEffect(() => { if (rqTab === "wish") loadWishes(wishMonth); }, [rqTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const myRqs = reqList.filter(r => r.uid === me.id);
   const myPlanCur = scheds[cm]?.[me.id] || null;
@@ -179,10 +183,14 @@ export default function EmpView() {
             <label style={lbl}>Art</label><select style={inp} value={rqForm.type} onChange={e => setRqForm(p => ({ ...p, type: e.target.value }))}><option value="vac">Urlaubsantrag</option><option value="sick">Krankmeldung</option><option value="swap">Schichttausch</option></select>
             {rqForm.type === "sick" && <><label style={lbl}>Von</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e => setRqForm(p => ({ ...p, fromDate: e.target.value }))} /><label style={lbl}>Bis (optional)</label><input style={inp} type="date" value={rqForm.toDate} onChange={e => setRqForm(p => ({ ...p, toDate: e.target.value }))} /></>}
             {rqForm.type === "vac" && <>
+              <label style={lbl}>Monat</label>
+              <input style={{ ...inp, marginBottom: 6 }} type="month" min={cm}
+                value={rqForm.vacMonth || nm}
+                onChange={e => setRqForm(p => ({ ...p, vacMonth: e.target.value }))} />
               <label style={lbl}>Urlaubstage ({rqForm.dates.length})</label>
-              <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 4px" }}>Wähle einen oder mehrere Tage. Sperrtage des Betriebs sind ausgeschlossen.</p>
+              <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 4px" }}>Wähle einen oder mehrere Tage aus beliebig vielen Monaten. Sperrtage sind ausgeschlossen.</p>
               {(() => {
-                const vacM = pm(nms());
+                const vacM = pm(rqForm.vacMonth || nm);
                 return <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginTop: 4 }}>
                   {DW.map(d => <div key={d} style={{ textAlign: "center", fontSize: 9, color: T.tx2, padding: "2px 0" }}>{d}</div>)}
                   {Array.from({ length: new Date(vacM.y, vacM.m0, 1).getDay() }, (_, i) => <div key={`e${i}`} />)}
