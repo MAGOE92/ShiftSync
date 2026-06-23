@@ -16,7 +16,7 @@ export default function EmpView() {
     getShiftInfo, shBg, shC, shX, doICS,
     setIsSuper, setWasSuper, setOrgId, setMe, setView, setATab,
     flash, logout, doClock, offerShift, withdrawOffer, takeShift,
-    saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq,
+    saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac,
     pm, nms,
     Tst, DarkBtn, NotifBell, NotifPanel, Header, TabBar, Avatar,
   } = useApp();
@@ -153,6 +153,30 @@ export default function EmpView() {
             </div>}
             {empPlanView === "month" && MiniCal(myPlanCur, cy, cm0)}
           </div>
+
+          {(() => {
+            const todayStr = today.toISOString().slice(0, 10);
+            const vacItems = myRqs
+              .filter(r => r.status === "ok" && r.type === "vac" && r.dates?.length)
+              .flatMap(r => r.dates.map(ds => ({ ds, rqId: r.id })))
+              .filter(v => v.ds >= todayStr)
+              .sort((a, b) => a.ds.localeCompare(b.ds));
+            if (!vacItems.length) return null;
+            const fmtDate = ds => { const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; };
+            return (
+              <div style={{ ...crd, marginTop: 12 }}>
+                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700 }}>Genehmigter Urlaub</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {vacItems.map(v => (
+                    <div key={v.ds} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: T.ok, borderRadius: 10 }}>
+                      <Icon n="calendar" s={14} style={{ color: T.okT, flexShrink: 0 }} />
+                      <span style={{ fontWeight: 700, fontSize: 13, color: T.okT }}>{fmtDate(v.ds)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>}
 
         {eTab === "plan" && <>
@@ -279,7 +303,10 @@ export default function EmpView() {
                       <button style={btn("s", true)} onClick={() => cancelRq(r.id)}>Zurückziehen</button>
                       <button style={btn("bl", true)} onClick={() => { setRqForm({ type: r.type, dates: r.dates || [], note: r.note || "", toId: r.toId || "", toDate: r.toDate || r.date || "", fromDate: r.fromDate || r.date || "", vacMonth: r.dates?.length ? r.dates[0].slice(0, 7) : "" }); cancelRq(r.id); setRqTab("new"); }}>Bearbeiten</button>
                     </div>}
-                    {r.status === "ok" && r.type === "vac" && <button style={{ ...btn("w", true), marginTop: 8 }} onClick={() => { setRqForm({ type: "sick", dates: [], note: `Krank während Urlaub (ab ${r.dates?.[0] || ""})`, toId: "", toDate: r.dates?.[r.dates.length - 1] || "", fromDate: r.dates?.[0] || "", vacMonth: "" }); setRqTab("new"); }}>Krank während Urlaub melden</button>}
+                    {r.status === "ok" && r.type === "vac" && <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                      <button style={btn("w", true)} onClick={() => { setRqForm({ type: "sick", dates: [], note: `Krank während Urlaub (ab ${r.dates?.[0] || ""})`, toId: "", toDate: r.dates?.[r.dates.length - 1] || "", fromDate: r.dates?.[0] || "", vacMonth: "" }); setRqTab("new"); }}>Krank während Urlaub</button>
+                      <button style={btn("er", true)} onClick={() => revokeVac(r.id)}>Stornieren</button>
+                    </div>}
                   </div>);
                 })}
               </div>

@@ -358,6 +358,13 @@ export default function App() {
     } catch (e) { flash("er", e.message || "PIN-Änderung fehlgeschlagen"); }
   };
   const cancelRq = async (reqId) => { await saveData({ ...data, reqs: reqList.map(r => r.id === reqId ? { ...r, status: "cancelled" } : r) }); flash("ok", "Anfrage zurückgezogen"); };
+  const revokeVac = async (reqId) => {
+    if (!confirm("Genehmigten Urlaub wirklich stornieren? Die Führungskraft wird informiert und muss den Plan ggf. anpassen.")) return;
+    const mgrs = emps.filter(e => ["owner", "director", "manager"].includes(e.role));
+    const nt = buildNotifs(mgrs.map(m => ({ uid: m.id, type: "newreq", text: `${me.name} hat genehmigten Urlaub storniert — Dienstplan prüfen` })));
+    await saveData({ ...data, reqs: reqList.map(r => r.id === reqId ? { ...r, status: "cancelled" } : r), notifs: [...allNotifs, ...nt] });
+    flash("ok", "Stornierung gemeldet — Führungskraft wird benachrichtigt");
+  };
   const submitRq = async () => { const r = { id: rid(), type: rqForm.type, uid: me.id, status: "pending", at: Date.now(), note: rqForm.note }; if (rqForm.type === "sick") { if (!rqForm.fromDate) { flash("er", "Datum"); return; } r.fromDate = rqForm.fromDate; r.toDate = rqForm.toDate || rqForm.fromDate; r.dates = datesBetween(r.fromDate, r.toDate); } else if (rqForm.type === "vac") { if (!rqForm.dates.length) { flash("er", "Tage wählen"); return; } r.dates = rqForm.dates; } else if (rqForm.type === "swap") { if (!rqForm.fromDate || !rqForm.toId || !rqForm.toDate) { flash("er", "Alle Felder"); return; } r.date = rqForm.fromDate; r.toId = rqForm.toId; r.toDate = rqForm.toDate; } const tL2 = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }[r.type]; const mgrs = emps.filter(e => e.role === "owner" || e.role === "director" || e.role === "manager").map(m => ({ uid: m.id, type: "newreq", text: `Neue ${tL2}-Anfrage von ${me.name}` })); const swapN = r.type === "swap" && r.toId ? [{ uid: r.toId, type: "swap", text: `${me.name} möchte mit dir tauschen: ${r.date} ↔ ${r.toDate}` }] : []; const nt = buildNotifs([...mgrs, ...swapN]); await saveData({ ...data, reqs: [...reqList, r], notifs: [...allNotifs, ...nt] }); setRqForm({ type: "vac", dates: [], note: "", toId: "", toDate: "", fromDate: "", vacMonth: "" }); flash("ok", "Anfrage gesendet ✓"); setRqTab("sent"); };
 
   const today = new Date(), cm = tms(), nm = nms();
@@ -420,7 +427,7 @@ export default function App() {
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
     doClock, istHoursMonth, exportPayroll, offerShift, withdrawOffer, takeShift,
     handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
-    setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq,
+    setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac,
     buildNotifs, markAllRead, markNotifRead, clearMyNotifs,
     setOrgStatus, setOrgPlan, startCheckout,
     // Style helpers
