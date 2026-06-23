@@ -46,6 +46,11 @@ export default function SetupView() {
           </div>
           <label style={lbl}>Name</label>
           <input style={inp} placeholder="Max Mustermann" value={wiz.name} onChange={e => setWiz(p => ({ ...p, name: e.target.value }))} />
+          {!isSuper && <>
+            <label style={lbl}>E-Mail-Adresse <span style={{ color: T.er, fontWeight: 400 }}>*</span></label>
+            <input style={inp} type="email" placeholder="max@meinbetrieb.de" value={wiz.email} onChange={e => setWiz(p => ({ ...p, email: e.target.value }))} autoComplete="email" />
+            <p style={{ fontSize: 11, color: T.tx2, margin: "-6px 0 10px" }}>Du erhältst deine Betriebs-ID und Zugangsdaten per E-Mail.</p>
+          </>}
           <label style={lbl}>Login-ID</label>
           <input style={inp} placeholder="max" value={wiz.lid} onChange={e => setWiz(p => ({ ...p, lid: e.target.value }))} />
           <label style={lbl}>PIN (mind. 4 Stellen)</label>

@@ -39,7 +39,7 @@ export default function App() {
   const [reqFilter, setReqFilter] = useState("pending");
 
   const [lOrg, setLOrg] = useState(""); const [lId, setLId] = useState(""); const [lPin, setLPin] = useState("");
-  const [wiz, setWiz] = useState({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "", plan: "free" });
+  const [wiz, setWiz] = useState({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "", plan: "free", email: "" });
   const [showOrgs, setShowOrgs] = useState(false);
   const [linkForm, setLinkForm] = useState({ code: "", lid: "", pin: "" });
   const [editE, setEditE] = useState(null); const [ef, setEf] = useState({});
@@ -228,7 +228,7 @@ export default function App() {
     const asSuper = isSuper;
     try {
       const r = await db.setup({ ...wiz, asSuper });
-      setWiz({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "", plan: "free" });
+      setWiz({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "", plan: "free", email: "" });
       if (asSuper) {
         if (r.orgs) setOrgs(r.orgs); setView("super");
         flash("ok", `${r.org.name} angelegt · Betriebs-ID: ${r.org.code} · Login: ${r.emp.lid} / ${ownerPin}`);

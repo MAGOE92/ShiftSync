@@ -449,6 +449,35 @@ async function actLogin(body: Any) {
   });
 }
 
+async function sendWelcomeMail(email: string, coName: string, code: string, lid: string) {
+  const key = Deno.env.get("RESEND_API_KEY");
+  if (!key || !email) return;
+  const appUrl = "https://shiftsync-pro-zeta.vercel.app";
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: "ShiftSync Pro <noreply@shiftsync.pro>",
+      to: email,
+      subject: `Dein Betrieb ist bereit — Betriebs-ID: ${code}`,
+      html: `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px">
+        <h2 style="margin:0 0 8px">Willkommen bei ShiftSync Pro!</h2>
+        <p style="color:#555">Dein Betrieb <strong>${coName}</strong> ist eingerichtet und einsatzbereit.</p>
+        <div style="background:#f5f5f3;border-radius:10px;padding:20px;margin:24px 0">
+          <div style="margin-bottom:10px"><span style="color:#888;font-size:12px">BETRIEBS-ID</span><br>
+            <strong style="font-family:monospace;font-size:22px;letter-spacing:4px;color:#4f46e5">${code}</strong>
+          </div>
+          <div><span style="color:#888;font-size:12px">DEINE LOGIN-ID</span><br>
+            <strong style="font-family:monospace">${lid}</strong>
+          </div>
+        </div>
+        <a href="${appUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">App öffnen</a>
+        <p style="margin-top:24px;font-size:12px;color:#888">Dein 14-Tage-Test läuft ab jetzt. Bei Fragen antworte einfach auf diese E-Mail.</p>
+      </div>`,
+    }),
+  }).catch(() => { /* E-Mail-Fehler blockieren nie den Setup */ });
+}
+
 async function actSetup(body: Any, session: Session | null) {
   const coName = String(body.coName || "").trim();
   const coSub = String(body.coSub || "").trim() || "Tankstelle · 24/7";
@@ -456,9 +485,30 @@ async function actSetup(body: Any, session: Session | null) {
   const name = String(body.name || "").trim();
   const lid = String(body.lid || "").trim().toLowerCase();
   const pin = String(body.pin || "").trim();
+  const email = String(body.email || "").trim().toLowerCase();
   if (!coName || !name || !lid || pin.length < 4) throw new ApiError("Alle Felder, PIN ≥4", 400);
 
   const asSuper = !!session?.sup;
+
+  // E-Mail-Pflicht + Anti-Abuse nur beim Self-Signup
+  if (!asSuper) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new ApiError("Bitte eine gültige E-Mail-Adresse angeben", 400);
+    }
+    // Ein aktiver Betrieb pro E-Mail — verhindert Trial-Missbrauch
+    const { data: existing } = await db.from("orgs")
+      .select("id, name, status")
+      .eq("email", email)
+      .neq("status", "archived")
+      .maybeSingle();
+    if (existing) {
+      throw new ApiError(
+        `Diese E-Mail ist bereits mit dem Betrieb „${existing.name}" verknüpft. Bitte direkt einloggen oder den Support kontaktieren.`,
+        409,
+      );
+    }
+  }
+
   const code = orgCode(coName);
   const { data: clash } = await db.from("orgs").select("id").eq("code", code).maybeSingle();
   if (clash) throw new ApiError("Ein Betrieb mit diesem Namen existiert bereits – bitte einloggen.", 409);
@@ -477,6 +527,7 @@ async function actSetup(body: Any, session: Session | null) {
     plan: chosenPlan,
     trial_ends: asSuper ? null : new Date(Date.now() + 14 * 864e5).toISOString(),
     accent: "#4f46e5",
+    email: email || null,
   };
   const { error } = await db.from("orgs").insert(orgRow);
   if (error) throw new ApiError("Anlegen fehlgeschlagen: " + error.message, 500);
@@ -501,6 +552,8 @@ async function actSetup(body: Any, session: Session | null) {
     return ok({ super: true, org, emp, data, orgs: await allOrgs() });
   }
   const token = await signToken({ oid: orgId, eid: empId, role: "owner", sup: false });
+  // Welcome-E-Mail im Hintergrund — blockiert nie die Antwort
+  sendWelcomeMail(email, coName, code, lid);
   return ok({ token, org, emp, data, orgs: [org] });
 }
 
