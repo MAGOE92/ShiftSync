@@ -31,6 +31,18 @@ export default function AdminView() {
     arbzgCheck,
   } = useApp();
 
+  const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  const MonthNav = ({ value, onChange }) => {
+    const { y, m0 } = pm(value);
+    return (
+      <div style={{ display: "flex", alignItems: "center", background: T.bg2, borderRadius: 10, overflow: "hidden", height: 38 }}>
+        <button style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 14px", color: T.tx, fontSize: 18, fontWeight: 700, height: "100%" }} onClick={() => onChange(adjMonth(value, -1))}>‹</button>
+        <div style={{ fontWeight: 700, fontSize: 13, color: T.tx, whiteSpace: "nowrap", padding: "0 4px" }}>{MF[m0]} {y}</div>
+        <button style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 14px", color: T.tx, fontSize: 18, fontWeight: 700, height: "100%" }} onClick={() => onChange(adjMonth(value, 1))}>›</button>
+      </div>
+    );
+  };
+
   const { y, m0, days, lbl: plbl } = pm(planMo);
   const baseSc = editMode ? draft : (scheds[planMo] || null);
   const abs = absMap();
@@ -199,7 +211,7 @@ export default function AdminView() {
         {aTab === "sched" && <div>
           <div style={{ ...crd, marginBottom: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-              <div><label style={lbl}>Monat</label><input type="month" value={planMo} onChange={e => { setPlanMo(e.target.value); setEditMode(false); setDraft(null); }} style={{ ...inp, width: "auto" }} /></div>
+              <MonthNav value={planMo} onChange={v => { setPlanMo(v); setEditMode(false); setDraft(null); }} />
               <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: `1px solid ${T.bord2}` }}>{[["day", "Tag"], ["week", "Woche"], ["month", "Monat"]].map(([k, l]) => <button key={k} onClick={() => setPlanView(k)} style={{ padding: "9px 14px", border: "none", background: planView === k ? T.invBg : T.bg, color: planView === k ? T.inv : T.tx, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{l}</button>)}</div>
               {planView !== "month" && <input type="date" value={planDate} onChange={e => setPlanDate(e.target.value)} style={{ ...inp, width: "auto" }} />}
               {can("createPlan") && <button style={{ ...btn(genLoad ? "s" : "p"), minWidth: 170 }} onClick={generate} disabled={genLoad}>{genLoad ? "Rechne…" : <><Icon n="sparkle" s={15} />Automatisch erstellen</>}</button>}
