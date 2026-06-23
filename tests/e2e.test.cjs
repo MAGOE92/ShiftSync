@@ -55,7 +55,8 @@ const ok = m => console.log("✓", m);
   const coName = byPlaceholder("Euro Rastpark"); if (!coName) fail("Setup-Formular fehlt");
   setVal(coName, "Testpark Eichenzell");
   setVal(byPlaceholder("Max Mustermann"), "Max Inhaber");
-  setVal(byPlaceholder("max"), "max");
+  setVal(byPlaceholder("chef@"), "test@example.com"); // E-Mail-Pflichtfeld (Placeholder "chef@meinbetrieb.de")
+  setVal(byPlaceholder("max"), "max");                // Login-ID (kein "chef@" im Placeholder → kein Konflikt)
   // Inhaber-PIN: das password-Feld im Setup
   const wizPin = [...document.querySelectorAll('input[type="password"]')][0];
   setVal(wizPin, "1234");
