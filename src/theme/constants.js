@@ -7,18 +7,18 @@ export const SH = {
 };
 
 export const SHIFT_COLORS = [
-  { bg: "#dcfce7", bgD: "#14532d", c: "#15803d", cD: "#86efac", x: "#22c55e" }, // Grün
-  { bg: "#dbeafe", bgD: "#1e3a5f", c: "#2563eb", cD: "#93c5fd", x: "#3b82f6" }, // Blau
-  { bg: "#ede9fe", bgD: "#3b2764", c: "#7c3aed", cD: "#c4b5fd", x: "#8b5cf6" }, // Violett
-  { bg: "#fce7f3", bgD: "#831843", c: "#be185d", cD: "#f9a8d4", x: "#ec4899" }, // Pink
-  { bg: "#cffafe", bgD: "#164e63", c: "#0e7490", cD: "#67e8f9", x: "#06b6d4" }, // Cyan
-  { bg: "#ffedd5", bgD: "#7c2d12", c: "#c2410c", cD: "#fdba74", x: "#f97316" }, // Orange
-  { bg: "#ccfbf1", bgD: "#134e4a", c: "#0f766e", cD: "#5eead4", x: "#14b8a6" }, // Türkis
-  { bg: "#e0e7ff", bgD: "#312e81", c: "#4338ca", cD: "#a5b4fc", x: "#6366f1" }, // Indigo
-  { bg: "#ecfccb", bgD: "#365314", c: "#4d7c0f", cD: "#bef264", x: "#84cc16" }, // Limette
-  { bg: "#fae8ff", bgD: "#701a75", c: "#a21caf", cD: "#f0abfc", x: "#d946ef" }, // Magenta
-  { bg: "#e0f2fe", bgD: "#075985", c: "#0369a1", cD: "#7dd3fc", x: "#0ea5e9" }, // Himmelblau
-  { bg: "#f5f5f4", bgD: "#44403c", c: "#57534e", cD: "#d6d3d1", x: "#78716c" }, // Stein
+  { bg: "#dcfce7", bgD: "#14532d", c: "#15803d", cD: "#86efac", x: "#22c55e" },   // Grün
+  { bg: "#dbeafe", bgD: "#1e3a5f", c: "#2563eb", cD: "#93c5fd", x: "#3b82f6" },   // Blau
+  { bg: "#ede9fe", bgD: "#3b2764", c: "#7c3aed", cD: "#c4b5fd", x: "#8b5cf6" },   // Violett
+  { bg: "#fce7f3", bgD: "#831843", c: "#be185d", cD: "#f9a8d4", x: "#ec4899" },   // Pink
+  { bg: "#cffafe", bgD: "#164e63", c: "#0e7490", cD: "#67e8f9", x: "#06b6d4" },   // Cyan
+  { bg: "#fef3c7", bgD: "#78350f", c: "#b45309", cD: "#fcd34d", x: "#f59e0b" },   // Amber
+  { bg: "#fee2e2", bgD: "#7f1d1d", c: "#b91c1c", cD: "#fca5a5", x: "#ef4444" },   // Rot
+  { bg: "#f0fdf4", bgD: "#052e16", c: "#166534", cD: "#6ee7b7", x: "#10b981" },   // Smaragd
+  { bg: "#fff7ed", bgD: "#431407", c: "#c2410c", cD: "#fdba74", x: "#f97316" },   // Orange
+  { bg: "#f0f9ff", bgD: "#0c4a6e", c: "#0369a1", cD: "#7dd3fc", x: "#0ea5e9" },   // Himmelblau
+  { bg: "#fdf4ff", bgD: "#4a044e", c: "#a21caf", cD: "#f0abfc", x: "#d946ef" },   // Fuchsia
+  { bg: "#f8fafc", bgD: "#0f172a", c: "#475569", cD: "#cbd5e1", x: "#64748b" },   // Grau
 ];
 
 export const ROLES = {
