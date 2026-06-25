@@ -32,13 +32,26 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
   const monthlyTargetHours = {};
   emps.forEach(e => { const pct = e.workPct || 100; monthlyTargetHours[e.id] = (weekStdHours * pct / 100) * (days / 7); });
   const workedHours = {}; emps.forEach(e => workedHours[e.id] = 0);
+  // Per-Schicht-Zähler für Ausgewogenheit (besonders "FS"-Präferenz)
+  const shiftCounts = {}; emps.forEach(e => shiftCounts[e.id] = {});
 
   const prefScore = (e, sh) => {
-    if (e.pref === sh) return -2;
-    if (e.pref === "FS" && (sh === "F" || sh === "S")) return -1.5;
-    if (e.pref === "noN" && sh === "N") return 5;
+    const cnt = shiftCounts[e.id][sh] || 0;
+    // Exakte Schichtpräferenz: stark bevorzugt, leichte Dämpfung bei Häufung
+    if (e.pref === sh) return -8 + cnt * 0.25;
+    // Früh-oder-Spät: Ausgewogenheit zwischen F und S sicherstellen
+    if (e.pref === "FS" && (sh === "F" || sh === "S")) {
+      const otherKey = sh === "F" ? "S" : "F";
+      const otherCnt = shiftCounts[e.id][otherKey] || 0;
+      const imbalance = cnt - otherCnt; // positiv = schon zu viele dieser Art
+      return -4 + imbalance * 0.9;
+    }
+    // Keine Nacht: Nachtschicht stark bestrafen
+    if (e.pref === "noN" && sh === "N") return 12;
+    // Flexibel: neutral
     if (e.pref === "any") return 0;
-    return 0.3;
+    // Nicht-bevorzugte Schicht: moderate Strafe
+    return 3;
   };
 
   for (let d = 0; d < days; d++) {
@@ -58,11 +71,19 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
           .map(e => {
             const target = monthlyTargetHours[e.id];
             const worked = workedHours[e.id];
+            // Auslastungs-Faktor reduziert (3 statt 5), damit Präferenz stärker dominiert
             const utilization = target > 0 ? worked / target : 1;
-            return { ...e, score: utilization * 5 + prefScore(e, sh) + (Math.random() - .5) * .6 };
+            return { ...e, score: utilization * 3 + prefScore(e, sh) + (Math.random() - .5) * .35 };
           })
           .sort((a, b) => a.score - b.score);
-        candidates.forEach(e => { if (got < need) { sc[e.id][d] = sh; workedHours[e.id] += shHours; got++; } });
+        candidates.forEach(e => {
+          if (got < need) {
+            sc[e.id][d] = sh;
+            workedHours[e.id] += shHours;
+            shiftCounts[e.id][sh] = (shiftCounts[e.id][sh] || 0) + 1;
+            got++;
+          }
+        });
       }
     }
   }
