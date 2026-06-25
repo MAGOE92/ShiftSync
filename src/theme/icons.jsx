@@ -34,6 +34,7 @@ export const ICONS = {
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
   wand: '<path d="m3 21 9-9M15 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM20 14l.6 1.2 1.4.6-1.4.6-.6 1.2-.6-1.2-1.4-.6 1.4-.6z"/>',
   clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/>',
+  ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
 };
 
 export const Icon = ({ n, s = 18, sw = 1.8, style }) => {

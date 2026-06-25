@@ -250,7 +250,7 @@ export default function EmpView() {
                     {holidays.some(h => rqForm.fromDate && rqForm.toDate && h.date >= rqForm.fromDate && h.date <= rqForm.toDate) && <span style={{ marginLeft: 6, opacity: .7 }}>(Sperrtage ausgeschlossen)</span>}
                   </div>
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                    {sorted.map(ds => <button key={ds} onClick={() => setRqForm(p => ({ ...p, dates: p.dates.filter(x => x !== ds) }))} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: `1px solid ${T.okT}40`, background: "transparent", color: T.okT, cursor: "pointer" }}>{fmtD(ds)} ×</button>)}
+                    {sorted.map(ds => <button key={ds} onClick={() => setRqForm(p => ({ ...p, dates: p.dates.filter(x => x !== ds) }))} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, padding: "2px 7px", borderRadius: 6, border: `1px solid ${T.okT}40`, background: "transparent", color: T.okT, cursor: "pointer" }}>{fmtD(ds)} <Icon n="x" s={10} /></button>)}
                   </div>
                 </div>}
                 {(!rqForm.fromDate || !rqForm.toDate) && <p style={{ fontSize: 11, color: T.tx2, margin: "0 0 8px" }}>Von- und Bis-Datum wählen — alle Tage dazwischen werden automatisch übernommen.</p>}
@@ -309,12 +309,17 @@ export default function EmpView() {
               {!myRqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "16px 0", margin: 0, fontSize: 13 }}>Keine Anfragen.</p>}
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[...myRqs].reverse().map(r => {
-                  const sL = { pending: [T.w, T.wT, "⏳ Offen"], ok: [T.ok, T.okT, "✓ Genehmigt"], no: [T.er, T.erT, "✗ Abgelehnt"], cancelled: [T.bg2, T.tx2, "⊘ Zurückgezogen"] };
-                  const [bg, col, l] = sL[r.status] || sL.pending;
+                  const sL = { pending: [T.w, T.wT, "clock", "Offen"], ok: [T.ok, T.okT, "check", "Genehmigt"], no: [T.er, T.erT, "x", "Abgelehnt"], cancelled: [T.bg2, T.tx2, "ban", "Zurückgezogen"] };
+                  const [bg, col, ic, l] = sL[r.status] || sL.pending;
+                  const fmtD = ds => { const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; };
+                  let when = "";
+                  if (r.type === "vac" && r.dates?.length) { const s = [...r.dates].sort(); when = s.length === 1 ? fmtD(s[0]) : `${s.length} Tage · ${fmtD(s[0])} – ${fmtD(s[s.length - 1])}`; }
+                  else if (r.type === "sick") when = r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} – ${fmtD(r.toDate)}` : fmtD(r.fromDate || r.date);
+                  else if (r.type === "swap") when = `${fmtD(r.fromDate || r.date)} ↔ ${fmtD(r.toDate)}`;
                   return (<div key={r.id} style={{ padding: "10px 13px", background: bg, borderRadius: 11 }}>
                     <div style={{ fontWeight: 700, fontSize: 13, color: col }}>{{ sick: "Krankmeldung", vac: "Urlaub", swap: "Tausch" }[r.type]}</div>
-                    <div style={{ fontSize: 12, color: col, opacity: .8 }}>{r.fromDate || r.dates?.slice(0, 3).join(", ") || r.date}{r.note && ` · "${r.note}"`}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: col, marginTop: 2 }}>{l}</div>
+                    <div style={{ fontSize: 12, color: col, opacity: .8 }}>{when}{r.note && ` · „${r.note}"`}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: col, marginTop: 3 }}><Icon n={ic} s={13} />{l}</div>
                     {r.decisionNote && <div style={{ fontSize: 11, color: col, marginTop: 4, fontStyle: "italic" }}>Antwort: {r.decisionNote}</div>}
                     {r.status === "pending" && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                       <button style={btn("s", true)} onClick={() => cancelRq(r.id)}>Zurückziehen</button>

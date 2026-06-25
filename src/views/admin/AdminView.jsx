@@ -86,7 +86,7 @@ export default function AdminView() {
           </>}
       </div></div>}
 
-      {editE && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editE.name}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditE(null)}>✕</button></div>
+      {editE && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editE.name}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditE(null)}><Icon n="x" s={15} /></button></div>
         <label style={lbl}>Name</label><input style={inp} value={ef.name || ""} onChange={e => setEf(p => ({ ...p, name: e.target.value }))} />
         <label style={lbl}>Login-ID</label><input style={inp} value={ef.lid || ""} onChange={e => setEf(p => ({ ...p, lid: e.target.value }))} />
         <label style={lbl}>Schichtpräferenz</label><select style={inp} value={ef.pref || "any"} onChange={e => setEf(p => ({ ...p, pref: e.target.value }))}>{PR.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s => <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select>
@@ -104,9 +104,9 @@ export default function AdminView() {
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => setEditE(null)}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={saveEf}>Speichern</button></div>
       </div></div>}
 
-      {rstE && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 360 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>PIN: {rstE.name}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setRstE(null); setRstP(""); }}>✕</button></div><label style={lbl}>Neuer PIN (≥4)</label><input style={{ ...inp, fontSize: 24, letterSpacing: 10, textAlign: "center", fontWeight: 700 }} value={rstP} onChange={e => setRstP(e.target.value)} /><div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => { setRstE(null); setRstP(""); }}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={doRst}>Setzen</button></div></div></div>}
+      {rstE && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 360 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>PIN: {rstE.name}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setRstE(null); setRstP(""); }}><Icon n="x" s={15} /></button></div><label style={lbl}>Neuer PIN (≥4)</label><input style={{ ...inp, fontSize: 24, letterSpacing: 10, textAlign: "center", fontWeight: 700 }} value={rstP} onChange={e => setRstP(e.target.value)} /><div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => { setRstE(null); setRstP(""); }}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={doRst}>Setzen</button></div></div></div>}
 
-      {editShift && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editShift.idx === undefined ? "Neues Schichtmodell" : "Schichtmodell"}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditShift(null)}>✕</button></div>
+      {editShift && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editShift.idx === undefined ? "Neues Schichtmodell" : "Schichtmodell"}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditShift(null)}><Icon n="x" s={15} /></button></div>
         <label style={lbl}>Bezeichnung</label><input style={inp} placeholder="z. B. Früh" value={editShift.label} onChange={e => setEditShift(p => ({ ...p, label: e.target.value }))} />
         <label style={lbl}>Kürzel (1 Buchstabe)</label><input style={inp} maxLength={2} placeholder="z. B. F" value={editShift.key} onChange={e => setEditShift(p => ({ ...p, key: e.target.value.toUpperCase() }))} />
         <label style={lbl}>Beginn</label><input style={inp} type="time" value={editShift.start} onChange={e => setEditShift(p => ({ ...p, start: e.target.value }))} />
@@ -117,11 +117,11 @@ export default function AdminView() {
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => setEditShift(null)}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={saveShift}>Speichern</button></div>
       </div></div>}
 
-      {editReq && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Entscheidung mit Notiz</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setEditReq(null); setDecNote(""); }}>✕</button></div>
+      {editReq && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Entscheidung mit Notiz</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setEditReq(null); setDecNote(""); }}><Icon n="x" s={15} /></button></div>
         <p style={{ fontSize: 12, color: T.tx2, margin: "0 0 8px" }}>Anfrage von <strong>{emps.find(e => e.id === editReq.req.uid)?.name}</strong></p>
         <label style={lbl}>Notiz (optional, für den Mitarbeiter sichtbar)</label>
         <textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={decNote} onChange={e => setDecNote(e.target.value)} placeholder="z. B. Vertretung gefunden, dieses Mal nicht möglich, ..." />
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("er"), flex: 1 }} onClick={() => handleReq(editReq.req.id, "no", decNote)}>✗ Ablehnen</button><button style={{ ...btn("ok"), flex: 1 }} onClick={() => handleReq(editReq.req.id, "ok", decNote)}>✓ Genehmigen</button></div>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("er"), flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => handleReq(editReq.req.id, "no", decNote)}><Icon n="x" s={15} />Ablehnen</button><button style={{ ...btn("ok"), flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => handleReq(editReq.req.id, "ok", decNote)}><Icon n="check" s={15} />Genehmigen</button></div>
       </div></div>}
 
       {hrEmp && (() => {
@@ -183,7 +183,7 @@ export default function AdminView() {
                   <div style={{ fontSize: 11, color: T.tx2 }}>{ROLES[hrEmp.role || "staff"]?.l} · {hrEmp.lid} · {hrEmp.workPct || 100}%</div>
                   {hrEmp.startDate && <div style={{ fontSize: 11, color: T.tx2 }}>seit {new Date(hrEmp.startDate + "T12:00:00").toLocaleDateString("de-DE")}</div>}
                 </div>
-                <button style={{ ...btn("s", true), padding: "5px 9px" }} onClick={() => setHrEmp(null)}>✕</button>
+                <button style={{ ...btn("s", true), padding: "5px 9px" }} onClick={() => setHrEmp(null)}><Icon n="x" s={15} /></button>
               </div>
 
               {/* Tabs */}
@@ -293,6 +293,46 @@ export default function AdminView() {
             ))}
           </div>
           {(() => { const hasPlan = !!curSc; const reqTotal = hasPlan ? days * shiftDefs.reduce((s, d) => s + d.required, 0) : 0; let filled = 0; if (hasPlan) { for (let d = 0; d < days; d++) shiftDefs.forEach(s => { filled += Math.min(cov[d]?.[s.key] || 0, s.required); }); } const coverage = reqTotal ? Math.round(filled / reqTotal * 100) : 0; const plannedH = hasPlan ? planEmps.reduce((s, e) => s + calcHours(curSc[e.id] || []), 0) : 0; const util = hasPlan && planEmps.length ? Math.round(planEmps.map(e => { const so = targetHours(e, days); return so > 0 ? calcHours(curSc[e.id] || []) / so : 1; }).reduce((a, b) => a + b, 0) / planEmps.length * 100) : 0; const vacDays = hasPlan ? planEmps.reduce((s, e) => s + (curSc[e.id] || []).filter(x => x === "U").length, 0) : 0; const kpis = [["chart", `${coverage}%`, "Abdeckung", coverage >= 95 ? T.okT : coverage >= 80 ? T.wT : T.erT], ["alert", gaps, "Tage mit Lücken", gaps ? T.erT : T.okT], ["clock", `${Math.round(plannedH)} h`, "geplant gesamt", T.tx], ["users", `${util}%`, "Ø Auslastung", Math.abs(util - 100) <= 10 ? T.okT : T.wT], ["plane", vacDays, "Urlaubstage", T.tx], ["inbox", pendCount, "offene Anfragen", pendCount ? T.wT : T.okT]]; return <div style={{ ...crd, marginBottom: 14 }}><div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}><h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Kennzahlen</h3><span style={{ fontSize: 11, color: T.tx2 }}>{plbl}</span></div>{!hasPlan ? <p style={{ color: T.tx2, fontSize: 13, margin: "10px 0 0", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>Noch kein Plan für diesen Monat.<button onClick={() => setATab("sched")} style={btn("s", true)}>Zum Planer</button></p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(118px,1fr))", gap: 10, marginTop: 13 }}>{kpis.map(([ic, val, lab, col]) => <div key={lab} style={{ padding: "12px 13px", background: T.bg2, borderRadius: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 6, color: T.tx2, marginBottom: 8 }}><Icon n={ic} s={15} /><span style={{ fontSize: 10.5 }}>{lab}</span></div><div style={{ fontSize: 22, fontWeight: 800, color: col, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{val}</div></div>)}</div>}</div>; })()}
+          {curSc && (() => {
+            const rows = planEmps.map(e => {
+              const ist = calcHours(curSc[e.id] || []);
+              const soll = targetHours(e, days);
+              const pct = soll > 0 ? Math.round(ist / soll * 100) : 0;
+              const shifts = (curSc[e.id] || []).filter(x => shiftDefs.some(s => s.key === x)).length;
+              return { e, ist, soll, pct, shifts };
+            }).sort((a, b) => a.pct - b.pct);
+            if (!rows.length) return null;
+            const under = rows.filter(r => r.pct < 80).length;
+            return (
+              <div style={{ ...crd, marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Auslastung pro Mitarbeiter</h3>
+                  {under > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.erT }}>{under} unter 80 %</span>}
+                </div>
+                <p style={{ margin: "0 0 12px", fontSize: 11, color: T.tx2 }}>Geplante Ist-Stunden gegen Soll ({plbl}). Unterbesetzte zuerst.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                  {rows.map(({ e, ist, soll, pct, shifts }) => {
+                    const col = pct === 0 ? T.tx2 : pct < 80 ? T.erT : pct > 110 ? T.wT : T.okT;
+                    return (
+                      <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar emp={e} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 3 }}>
+                            <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
+                            <span style={{ color: T.tx2, whiteSpace: "nowrap" }}>{fmtH(ist)} / {fmtH(soll)} · {shifts} Schichten</span>
+                          </div>
+                          <div style={{ height: 7, background: T.bg3, borderRadius: 5, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: col, borderRadius: 5 }} />
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: col, fontFamily: "'Schibsted Grotesk',sans-serif", minWidth: 42, textAlign: "right" }}>{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ ...crd, marginBottom: 14 }}>
             <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>Wer arbeitet heute? · {today.getDate()}. {MF[today.getMonth()]}</h3>
             {!todTeam.length ? <p style={{ color: T.tx2, fontSize: 13, margin: 0 }}>Kein Plan für heute.</p> : shiftDefs.map(def => { const w = todTeam.filter(x => x.sh === def.key); return (<div key={def.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", background: shBg(def.key), borderRadius: 12, marginBottom: 7, flexWrap: "wrap" }}><span style={{ background: shX(def.key), color: "#fff", borderRadius: 7, padding: "3px 8px", fontWeight: 800, fontSize: 11 }}>{def.key}</span><span style={{ fontSize: 12, fontWeight: 700, color: shC(def.key), minWidth: 100 }}>{def.label} {def.start}–{def.end}</span>{!w.length ? <span style={{ fontSize: 12, color: T.erT, marginLeft: "auto", fontWeight: 600 }}>unbesetzt</span> : <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginLeft: "auto" }}>{w.map(x => <span key={x.e.id} style={{ fontSize: 11, background: T.card, padding: "2px 9px", borderRadius: 20, fontWeight: 600 }}>{x.e.name}</span>)}{w.length < def.required && <span style={{ fontSize: 12, color: T.erT }}>unterbesetzt</span>}</div>}</div>); })}
@@ -327,7 +367,7 @@ export default function AdminView() {
         {aTab === "reqs" && <div>
           <div style={{ ...crd, marginBottom: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              {[["pending", `⏳ Offen (${reqs.filter(r => r.status === "pending").length})`], ["ok", `✓ Genehmigt (${reqs.filter(r => r.status === "ok").length})`], ["no", `✗ Abgelehnt (${reqs.filter(r => r.status === "no").length})`], ["all", "Alle (Archiv)"]].map(([k, l]) => <button key={k} style={btn(reqFilter === k ? "p" : "s", true)} onClick={() => setReqFilter(k)}>{l}</button>)}
+              {[["pending", "clock", "Offen", reqs.filter(r => r.status === "pending").length], ["ok", "check", "Genehmigt", reqs.filter(r => r.status === "ok").length], ["no", "x", "Abgelehnt", reqs.filter(r => r.status === "no").length], ["all", "list", "Alle", null]].map(([k, ic, l, n]) => <button key={k} style={{ ...btn(reqFilter === k ? "p" : "s", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => setReqFilter(k)}><Icon n={ic} s={13} />{l}{n != null ? ` (${n})` : ""}</button>)}
               <button style={{ ...btn("s", true), marginLeft: "auto" }} onClick={refreshData} title="Neu laden"><Icon n="repeat" s={14} /></button>
             </div>
           </div>
@@ -335,12 +375,12 @@ export default function AdminView() {
             <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>{reqFilter === "pending" ? "Offene Anfragen" : reqFilter === "ok" ? "Genehmigt" : reqFilter === "no" ? "Abgelehnt" : "Archiv"}</h3>
             {!filteredReqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "24px 0", margin: 0, fontSize: 13 }}>Keine Einträge.</p>}
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {[...filteredReqs].reverse().map(r => { const emp = emps.find(e => e.id === r.uid); const tL = { sick: "Krankmeldung", vac: "Urlaub", swap: "Tausch" }; const sL = { pending: [T.w, T.wT, "⏳ Offen"], ok: [T.ok, T.okT, "✓ Genehmigt"], no: [T.er, T.erT, "✗ Abgelehnt"] }; const [bg, col, ic] = sL[r.status] || sL.pending; const canDec = (r.type === "vac" && can("approveVac")) || (r.type === "sick" && can("approveSick")) || (r.type === "swap" && can("approveSwap")); return (
+              {[...filteredReqs].reverse().map(r => { const emp = emps.find(e => e.id === r.uid); const tL = { sick: "Krankmeldung", vac: "Urlaub", swap: "Tausch" }; const sL = { pending: [T.w, T.wT, "clock", "Offen"], ok: [T.ok, T.okT, "check", "Genehmigt"], no: [T.er, T.erT, "x", "Abgelehnt"], cancelled: [T.bg3, T.tx2, "ban", "Zurückgezogen"] }; const [bg, col, ic, sl] = sL[r.status] || sL.pending; const fmtD = ds => { if (!ds) return ""; const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; }; const sorted = r.dates ? [...r.dates].sort() : []; const canDec = (r.type === "vac" && can("approveVac")) || (r.type === "sick" && can("approveSick")) || (r.type === "swap" && can("approveSwap")); return (
                 <div key={r.id} style={{ padding: "12px 14px", background: T.bg2, borderRadius: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}><span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name || "?"}</span><span style={{ fontSize: 12, color: T.tx2 }}>{tL[r.type]}</span><span style={{ background: bg, color: col, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, marginLeft: "auto" }}>{ic}</span></div>
-                  <div style={{ fontSize: 12, color: T.tx2, marginBottom: 6 }}>{r.type === "sick" && (r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${r.fromDate} bis ${r.toDate} (${r.dates?.length} Tage)` : r.fromDate || r.date)}{r.type === "vac" && `${r.dates?.length} Tage: ${r.dates?.slice(0, 3).join(", ")}${r.dates?.length > 3 ? "…" : ""}`}{r.type === "swap" && `${r.date} ↔ ${emps.find(e => e.id === r.toId)?.name} am ${r.toDate}`}{r.note && ` · "${r.note}"`}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}><span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name || "?"}</span><span style={{ fontSize: 12, color: T.tx2 }}>{tL[r.type]}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: bg, color: col, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, marginLeft: "auto" }}><Icon n={ic} s={11} />{sl}</span></div>
+                  <div style={{ fontSize: 12, color: T.tx2, marginBottom: 6 }}>{r.type === "sick" && (r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} – ${fmtD(r.toDate)} (${r.dates?.length} Tage)` : fmtD(r.fromDate || r.date))}{r.type === "vac" && (sorted.length ? `${sorted.length} Tage · ${fmtD(sorted[0])}${sorted.length > 1 ? ` – ${fmtD(sorted[sorted.length - 1])}` : ""}` : "")}{r.type === "swap" && `${fmtD(r.fromDate || r.date)} ↔ ${emps.find(e => e.id === r.toId)?.name} am ${fmtD(r.toDate)}`}{r.note && ` · „${r.note}"`}</div>
                   {r.decisionNote && <div style={{ fontSize: 12, padding: "5px 9px", background: T.bg, borderRadius: 8, marginBottom: 6, color: T.tx2 }}><strong>Entscheidungsnotiz:</strong> {r.decisionNote}</div>}
-                  {r.status === "pending" && canDec && <div style={{ display: "flex", gap: 7 }}><button style={btn("ok", true)} onClick={() => { setEditReq({ req: r }); setDecNote(""); }}>✓ Mit Notiz entscheiden</button><button style={btn("er", true)} onClick={() => handleReq(r.id, "no", "")}>✗ Schnell ablehnen</button></div>}
+                  {r.status === "pending" && canDec && <div style={{ display: "flex", gap: 7 }}><button style={{ ...btn("ok", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => { setEditReq({ req: r }); setDecNote(""); }}><Icon n="check" s={13} />Mit Notiz entscheiden</button><button style={{ ...btn("er", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => handleReq(r.id, "no", "")}><Icon n="x" s={13} />Schnell ablehnen</button></div>}
                   {r.status === "pending" && !canDec && <div style={{ fontSize: 11, color: T.tx2, fontStyle: "italic" }}>Keine Berechtigung zum Entscheiden.</div>}
                 </div>
               ); })}
