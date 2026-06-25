@@ -312,21 +312,25 @@ export default function EmpView() {
                   const sL = { pending: [T.w, T.wT, "clock", "Offen"], ok: [T.ok, T.okT, "check", "Genehmigt"], no: [T.er, T.erT, "x", "Abgelehnt"], cancelled: [T.bg2, T.tx2, "ban", "Zurückgezogen"] };
                   const [bg, col, ic, l] = sL[r.status] || sL.pending;
                   const fmtD = ds => { const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; };
+                  const tLabel = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }[r.type];
                   let when = "";
-                  if (r.type === "vac" && r.dates?.length) { const s = [...r.dates].sort(); when = s.length === 1 ? fmtD(s[0]) : `${s.length} Tage · ${fmtD(s[0])} – ${fmtD(s[s.length - 1])}`; }
-                  else if (r.type === "sick") when = r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} – ${fmtD(r.toDate)}` : fmtD(r.fromDate || r.date);
-                  else if (r.type === "swap") when = `${fmtD(r.fromDate || r.date)} ↔ ${fmtD(r.toDate)}`;
-                  return (<div key={r.id} style={{ padding: "10px 13px", background: bg, borderRadius: 11 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: col }}>{{ sick: "Krankmeldung", vac: "Urlaub", swap: "Tausch" }[r.type]}</div>
-                    <div style={{ fontSize: 12, color: col, opacity: .8 }}>{when}{r.note && ` · „${r.note}"`}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: col, marginTop: 3 }}><Icon n={ic} s={13} />{l}</div>
-                    {r.decisionNote && <div style={{ fontSize: 11, color: col, marginTop: 4, fontStyle: "italic" }}>Antwort: {r.decisionNote}</div>}
+                  if (r.type === "vac" && r.dates?.length) { const s = [...r.dates].sort(); when = s.length === 1 ? fmtD(s[0]) : `${s.length} Tage: ${fmtD(s[0])} bis ${fmtD(s[s.length - 1])}`; }
+                  else if (r.type === "sick") when = r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} bis ${fmtD(r.toDate)}` : fmtD(r.fromDate || r.date);
+                  else if (r.type === "swap") when = `${fmtD(r.fromDate || r.date)} tauschen mit ${emps.find(e => e.id === r.toId)?.name || "?"} am ${fmtD(r.toDate)}`;
+                  return (<div key={r.id} style={{ padding: "11px 13px", background: bg, borderRadius: 11 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: col, flex: 1 }}>{tLabel}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, color: col, opacity: 0.85 }}><Icon n={ic} s={12} />{l}</span>
+                    </div>
+                    {when && <div style={{ fontSize: 12, color: col, fontWeight: 500, marginBottom: r.note ? 3 : 0 }}>{when}</div>}
+                    {r.note && <div style={{ fontSize: 11, color: col, opacity: 0.75, fontStyle: "italic", marginBottom: 2 }}>"{r.note}"</div>}
+                    {r.decisionNote && <div style={{ fontSize: 11, color: col, marginTop: 5, padding: "4px 8px", background: "rgba(0,0,0,0.07)", borderRadius: 7 }}>Antwort: {r.decisionNote}</div>}
                     {r.status === "pending" && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                       <button style={btn("s", true)} onClick={() => cancelRq(r.id)}>Zurückziehen</button>
                       <button style={btn("bl", true)} onClick={() => { setRqForm({ type: r.type, dates: r.dates || [], note: r.note || "", toId: r.toId || "", toDate: r.toDate || r.date || "", fromDate: r.fromDate || r.date || "", vacMonth: r.dates?.length ? r.dates[0].slice(0, 7) : "" }); cancelRq(r.id); setRqTab("new"); }}>Bearbeiten</button>
                     </div>}
                     {r.status === "ok" && r.type === "vac" && <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                      <button style={btn("w", true)} onClick={() => { setRqForm({ type: "sick", dates: [], note: `Krank während Urlaub (ab ${r.dates?.[0] || ""})`, toId: "", toDate: r.dates?.[r.dates.length - 1] || "", fromDate: r.dates?.[0] || "", vacMonth: "" }); setRqTab("new"); }}>Krank während Urlaub</button>
+                      <button style={btn("w", true)} onClick={() => { setRqForm({ type: "sick", dates: [], note: `Krank waehrend Urlaub (ab ${r.dates?.[0] || ""})`, toId: "", toDate: r.dates?.[r.dates.length - 1] || "", fromDate: r.dates?.[0] || "", vacMonth: "" }); setRqTab("new"); }}>Krank im Urlaub</button>
                       <button style={btn("er", true)} onClick={() => revokeVac(r.id)}>Stornieren</button>
                     </div>}
                   </div>);

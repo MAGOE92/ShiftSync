@@ -19,6 +19,14 @@ export const SHIFT_COLORS = [
   { bg: "#f0f9ff", bgD: "#0c4a6e", c: "#0369a1", cD: "#7dd3fc", x: "#0ea5e9" },   // Himmelblau
   { bg: "#fdf4ff", bgD: "#4a044e", c: "#a21caf", cD: "#f0abfc", x: "#d946ef" },   // Fuchsia
   { bg: "#f8fafc", bgD: "#0f172a", c: "#475569", cD: "#cbd5e1", x: "#64748b" },   // Grau
+  { bg: "#fefce8", bgD: "#422006", c: "#a16207", cD: "#fde047", x: "#eab308" },   // Gelb
+  { bg: "#fff1f2", bgD: "#4c0519", c: "#be123c", cD: "#fda4af", x: "#f43f5e" },   // Rose
+  { bg: "#ecfdf5", bgD: "#022c22", c: "#047857", cD: "#6ee7b7", x: "#059669" },   // Teal-Grün
+  { bg: "#eff6ff", bgD: "#172554", c: "#1d4ed8", cD: "#bfdbfe", x: "#2563eb" },   // Königsblau
+  { bg: "#faf5ff", bgD: "#3b0764", c: "#6d28d9", cD: "#ddd6fe", x: "#7c3aed" },   // Lila-Dunkel
+  { bg: "#fff8f0", bgD: "#431407", c: "#b45309", cD: "#fed7aa", x: "#ea580c" },   // Terrakotta
+  { bg: "#f0fdfa", bgD: "#042f2e", c: "#0f766e", cD: "#99f6e4", x: "#14b8a6" },   // Türkis
+  { bg: "#fef9ec", bgD: "#1c1300", c: "#92400e", cD: "#fde68a", x: "#d97706" },   // Braun-Gold
 ];
 
 export const ROLES = {

@@ -1,5 +1,12 @@
 import { dim, hoursOf } from "./utils.js";
 
+// Erkennt Nachtschichten (Start >= 20 Uhr oder Ende <= 6 Uhr bei Mitternachtsübergang)
+function isNightShift(def) {
+  const sh = parseInt(def.start.split(":")[0]);
+  const eh = parseInt(def.end.split(":")[0]);
+  return sh >= 20 || (eh <= 6 && sh > eh);
+}
+
 // §5/§11 ArbZG: prüft ob ein Mitarbeiter an Tag d in Schicht sh eingesetzt werden kann.
 export function canWork(sc, id, d, sh, shiftDefs) {
   const r = sc[id];
@@ -35,6 +42,10 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
   // Per-Schicht-Zähler für Ausgewogenheit (besonders "FS"-Präferenz)
   const shiftCounts = {}; emps.forEach(e => shiftCounts[e.id] = {});
 
+  // Nicht-Nacht- und Nacht-Schichten trennen für rotierende Tagesreihenfolge
+  const nonNightDefs = shiftDefs.filter(s => !isNightShift(s));
+  const nightDefs = shiftDefs.filter(s => isNightShift(s));
+
   const prefScore = (e, sh) => {
     const cnt = shiftCounts[e.id][sh] || 0;
     // Exakte Schichtpräferenz: stark bevorzugt, leichte Dämpfung bei Häufung
@@ -50,12 +61,21 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
     if (e.pref === "noN" && sh === "N") return 12;
     // Flexibel: neutral
     if (e.pref === "any") return 0;
-    // Nicht-bevorzugte Schicht: moderate Strafe
-    return 3;
+    // Nicht-bevorzugte Schicht: hohe Strafe — Mitarbeiter mit anderer Präferenz
+    // nur im absoluten Notfall einsetzen, damit ihr Monatsbudget geschützt bleibt
+    return 15;
   };
 
   for (let d = 0; d < days; d++) {
-    for (const def of shiftDefs) {
+    // Rotierende Schichtreihenfolge: Nicht-Nacht-Schichten täglich rotieren,
+    // damit FS-Mitarbeiter nicht systematisch immer zuerst in Früh landen.
+    // Nachtschichten immer zuletzt (ArbZG-Ruhezeit-Logik unverändert).
+    const rotated = d % 2 === 0
+      ? [...nonNightDefs]
+      : [...nonNightDefs.slice(1), ...nonNightDefs.slice(0, 1)];
+    const dayShifts = [...rotated, ...nightDefs];
+
+    for (const def of dayShifts) {
       const sh = def.key, need = def.required;
       const shHours = hoursOf(def.start, def.end);
       let got = 0;
