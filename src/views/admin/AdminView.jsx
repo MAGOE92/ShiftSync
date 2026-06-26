@@ -275,7 +275,18 @@ export default function AdminView() {
           <button style={btn("pu", true)} onClick={() => { setIsSuper(true); setWasSuper(false); setOrgId(null); setMe(null); setView("super"); }}><Icon n="shield" s={14} />Zur Konsole</button>
         </div>}
 
-        {aTab === "dash" && <div>
+        {aTab === "dash" && (() => {
+          // Dashboard immer aktueller Monat — unabhängig vom Planer-Monat
+          const { y: dy, m0: dm0, days: ddays, lbl: dlbl } = pm(cm);
+          const dashBase = scheds[cm] || null;
+          const dSc = dashBase ? (() => { const c = {}; Object.keys(dashBase).forEach(id => { c[id] = [...dashBase[id]]; (abs[id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= ddays) c[id][day - 1] = type; }); }); return c; })() : null;
+          const dCov = dSc ? Array.from({ length: ddays }, (_, d) => { const o = {}; shiftDefs.forEach(s => { o[s.key] = planEmps.filter(e => (dSc[e.id] || [])[d] === s.key).length; }); return o; }) : [];
+          const dGaps = dCov.filter(c => shiftDefs.some(s => c[s.key] < s.required)).length;
+          const dGapDays = dSc ? (() => { const r = []; for (let d = 0; d < ddays; d++) { const gs = shiftDefs.filter(s => (dCov[d]?.[s.key] || 0) < s.required); if (gs.length) { const dt = new Date(dy, dm0, d + 1); r.push({ d, dow: DW[dt.getDay()], gs: gs.map(s => ({ key: s.key, label: s.label, has: dCov[d]?.[s.key] || 0, need: s.required })) }); } } return r; })() : [];
+          const dCovPct = (() => { if (!dSc) return 0; const req = ddays * shiftDefs.reduce((s, d) => s + d.required, 0); let filled = 0; for (let d = 0; d < ddays; d++) shiftDefs.forEach(s => { filled += Math.min(dCov[d]?.[s.key] || 0, s.required); }); return req ? Math.round(filled / req * 100) : 0; })();
+          const dUtil = dSc && planEmps.length ? Math.round(planEmps.map(e => { const so = targetHours(e, ddays); return so > 0 ? calcHours(dSc[e.id] || []) / so : 1; }).reduce((a, b) => a + b, 0) / planEmps.length * 100) : 0;
+          const dHours = dSc ? planEmps.reduce((s, e) => s + calcHours(dSc[e.id] || []), 0) : 0;
+          return <div>
           {orgStatus !== "active" && <div style={{ ...crd, marginBottom: 14, background: orgStatus === "trial" ? T.bl : T.w, borderColor: (orgStatus === "trial" ? T.blT : T.wT) + "40" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap" }}>
               <Icon n={orgStatus === "trial" ? "clock" : "alert"} s={20} style={{ color: orgStatus === "trial" ? T.blT : T.wT }} />
@@ -286,22 +297,90 @@ export default function AdminView() {
             </div>
           </div>}
           {emps.length <= 1 && <div style={{ ...crd, marginBottom: 14, background: T.bl, borderColor: T.blT + "40" }}><h3 style={{ margin: "0 0 8px", fontSize: 14, color: T.blT }}>Startklar · Betriebs-ID: <span style={{ fontFamily: "ui-monospace,monospace" }}>{org.code}</span></h3><p style={{ margin: "0 0 12px", fontSize: 13, color: T.blT }}>Mit dieser Betriebs-ID melden sich deine Mitarbeiter an.</p><button style={btn("p")} onClick={seedDemo}>Demo-Team laden</button></div>}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 11, marginBottom: 14 }}>
-            {[["users", emps.length, "im Team", "staff", true], ["inbox", pendCount, pendCount ? "Offene Anfragen" : "Keine Anfragen", "reqs", true], ["calendar", null, "Planer öffnen", "sched", false], ["settings", null, "Betrieb", "settings", false]].map(([ic, v, l, tabKey, metric]) => (
-              <button key={l} onClick={() => setATab(tabKey)} style={{ ...crd, textAlign: "left", padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", gap: 13, alignItems: "flex-start" }}>
-                <div style={{ width: 38, height: 38, borderRadius: 11, background: T.acc + "14", color: T.acc, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon n={ic} s={19} /></div>
-                {metric ? <div><div style={{ fontSize: 26, fontWeight: 800, color: T.tx, lineHeight: 1, fontFamily: "'Schibsted Grotesk',sans-serif" }}>{v}</div><div style={{ fontSize: 11.5, color: T.tx2, marginTop: 5 }}>{l}</div></div>
-                  : <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}><div style={{ fontSize: 14.5, fontWeight: 700, color: T.tx }}>{l}</div><span style={{ color: T.tx2 }}><Icon n="chevron" s={16} /></span></div>}
-              </button>
-            ))}
+          {/* ── HEUTE (Hero) ─────────────────────────────── */}
+          <div style={{ ...crd, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Heute · {DW[today.getDay()]} {today.getDate()}. {MF[today.getMonth()]}</h3>
+              <button style={btn("s", true)} onClick={() => setATab("sched")}><Icon n="calendar" s={13} />Planer</button>
+            </div>
+            {!todTeam.length
+              ? <div style={{ padding: "14px 0 2px", color: T.tx2, fontSize: 13 }}>Kein Dienstplan für heute hinterlegt.</div>
+              : <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {shiftDefs.map(def => {
+                    const w = todTeam.filter(x => x.sh === def.key);
+                    const ok = w.length >= def.required;
+                    return (
+                      <div key={def.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: ok ? shBg(def.key) : T.er, borderRadius: 11, flexWrap: "wrap" }}>
+                        <span style={{ background: shX(def.key), color: "#fff", borderRadius: 6, padding: "3px 8px", fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{def.key}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: ok ? shC(def.key) : T.erT, minWidth: 110 }}>{def.label} {def.start}–{def.end}</span>
+                        {w.length === 0
+                          ? <span style={{ fontSize: 12, color: T.erT, fontWeight: 700, marginLeft: "auto" }}>unbesetzt</span>
+                          : <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginLeft: "auto", alignItems: "center" }}>
+                              {w.map(x => <span key={x.e.id} style={{ fontSize: 11, background: T.card, padding: "2px 9px", borderRadius: 20, fontWeight: 600 }}>{x.e.name}</span>)}
+                              {!ok && <span style={{ fontSize: 11, color: T.erT, fontWeight: 700 }}>+{def.required - w.length} fehlt</span>}
+                            </div>}
+                      </div>
+                    );
+                  })}
+                </div>}
           </div>
-          {(() => { const hasPlan = !!curSc; const reqTotal = hasPlan ? days * shiftDefs.reduce((s, d) => s + d.required, 0) : 0; let filled = 0; if (hasPlan) { for (let d = 0; d < days; d++) shiftDefs.forEach(s => { filled += Math.min(cov[d]?.[s.key] || 0, s.required); }); } const coverage = reqTotal ? Math.round(filled / reqTotal * 100) : 0; const plannedH = hasPlan ? planEmps.reduce((s, e) => s + calcHours(curSc[e.id] || []), 0) : 0; const util = hasPlan && planEmps.length ? Math.round(planEmps.map(e => { const so = targetHours(e, days); return so > 0 ? calcHours(curSc[e.id] || []) / so : 1; }).reduce((a, b) => a + b, 0) / planEmps.length * 100) : 0; const vacDays = hasPlan ? planEmps.reduce((s, e) => s + (curSc[e.id] || []).filter(x => x === "U").length, 0) : 0; const kpis = [{ ic: "chart", val: `${coverage}%`, lab: "Abdeckung", col: coverage >= 95 ? T.okT : coverage >= 80 ? T.wT : T.erT, bg: coverage >= 95 ? T.ok : coverage >= 80 ? T.w : T.er }, { ic: "alert", val: String(gaps), lab: "Tage mit Lücken", col: gaps ? T.erT : T.okT, bg: gaps ? T.er : T.ok }, { ic: "clock", val: `${Math.round(plannedH)} h`, lab: "Stunden geplant", col: T.tx, bg: T.bg2 }, { ic: "users", val: `${util}%`, lab: "Ø Auslastung", col: Math.abs(util - 100) <= 10 ? T.okT : T.wT, bg: Math.abs(util - 100) <= 10 ? T.ok : T.w }, { ic: "plane", val: String(vacDays), lab: "Urlaubstage", col: T.tx, bg: T.bg2 }, { ic: "inbox", val: String(pendCount), lab: "Offene Anfragen", col: pendCount ? T.wT : T.okT, bg: pendCount ? T.w : T.ok }]; return <div style={{ ...crd, marginBottom: 14 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: hasPlan ? 14 : 10, flexWrap: "wrap", gap: 8 }}><div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Kennzahlen</h3><span style={{ fontSize: 11, color: T.tx2 }}>{plbl}</span></div><button style={btn("s", true)} onClick={() => setATab("sched")}><Icon n="calendar" s={13} />Zum Planer</button></div>{!hasPlan ? <div style={{ padding: "18px 16px", background: T.bg2, borderRadius: 12, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}><div style={{ display: "flex", alignItems: "center", gap: 8, color: T.tx2 }}><Icon n="alert" s={18} /><span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Kein Plan für {plbl}</span></div><p style={{ margin: 0, fontSize: 12, color: T.tx2 }}>Erstelle einen Dienstplan, um Abdeckung, Auslastung und Lücken zu sehen.</p><button style={btn("p", true)} onClick={() => setATab("sched")}><Icon n="sparkle" s={14} />Jetzt planen</button></div> : <><div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: 8, marginBottom: gaps > 0 ? 10 : 0 }}>{kpis.map(({ ic, val, lab, col, bg }) => <div key={lab} style={{ padding: "11px 12px", background: bg, borderRadius: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 5, color: col, marginBottom: 6, opacity: 0.75 }}><Icon n={ic} s={12} /><span style={{ fontSize: 9.5, fontWeight: 600, lineHeight: 1.2 }}>{lab}</span></div><div style={{ fontSize: isMobile ? 20 : 22, fontWeight: 800, color: col, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{val}</div></div>)}</div>{gaps > 0 && <div style={{ padding: "11px 13px", background: T.er, borderRadius: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: gapDays.length ? 9 : 0, flexWrap: "wrap" }}><Icon n="alert" s={15} style={{ color: T.erT, flexShrink: 0 }} /><span style={{ fontSize: 12, fontWeight: 700, color: T.erT, flex: 1 }}>{gaps} Tag{gaps > 1 ? "e" : ""} unterbesetzt</span><button style={{ ...btn("er", true), padding: "4px 10px" }} onClick={() => setATab("sched")}><Icon n="pencil" s={13} />Planer</button></div>{gapDays.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{gapDays.slice(0, 10).map(({ d, dow, gs }) => <div key={d} style={{ fontSize: 11, color: T.erT, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}><span style={{ fontWeight: 700, minWidth: 55 }}>{dow} {d + 1}.</span>{gs.map(g => <span key={g.key} style={{ background: "rgba(0,0,0,0.12)", borderRadius: 5, padding: "1px 7px", fontWeight: 600 }}>{g.label} {g.has}/{g.need}</span>)}</div>)}{gapDays.length > 10 && <div style={{ fontSize: 10, color: T.erT, opacity: 0.75, marginTop: 2 }}>+{gapDays.length - 10} weitere Tage</div>}</div>}</div>}</>}</div>; })()}
-          {curSc && (() => {
+
+          {/* ── DIENSTPLAN-HEALTH ─────────────────────────── */}
+          <div style={{ ...crd, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Dienstplan</h3>
+                <span style={{ fontSize: 11, color: T.tx2 }}>{dlbl}</span>
+              </div>
+              <button style={btn("s", true)} onClick={() => { setPlanMo(cm); setATab("sched"); }}><Icon n="calendar" s={13} />Im Planer bearbeiten</button>
+            </div>
+            {!dSc
+              ? <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", padding: "4px 0" }}>
+                  <span style={{ fontSize: 13, color: T.tx2 }}>Noch kein Plan für {dlbl} erstellt.</span>
+                  <button style={btn("p", true)} onClick={() => { setPlanMo(cm); setATab("sched"); }}><Icon n="sparkle" s={14} />Jetzt planen</button>
+                </div>
+              : <>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 8, marginBottom: dGaps > 0 ? 10 : 0 }}>
+                    <div style={{ padding: "12px 14px", background: dCovPct >= 95 ? T.ok : dCovPct >= 80 ? T.w : T.er, borderRadius: 12 }}>
+                      <div style={{ fontSize: 10, color: dCovPct >= 95 ? T.okT : dCovPct >= 80 ? T.wT : T.erT, fontWeight: 600, marginBottom: 5, opacity: 0.8 }}>Abdeckung</div>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: dCovPct >= 95 ? T.okT : dCovPct >= 80 ? T.wT : T.erT, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{dCovPct}%</div>
+                    </div>
+                    <div style={{ padding: "12px 14px", background: dGaps ? T.er : T.ok, borderRadius: 12 }}>
+                      <div style={{ fontSize: 10, color: dGaps ? T.erT : T.okT, fontWeight: 600, marginBottom: 5, opacity: 0.8 }}>Tage mit Lücken</div>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: dGaps ? T.erT : T.okT, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{dGaps}</div>
+                    </div>
+                    <div style={{ padding: "12px 14px", background: T.bg2, borderRadius: 12 }}>
+                      <div style={{ fontSize: 10, color: T.tx2, fontWeight: 600, marginBottom: 5, opacity: 0.8 }}>Stunden / Auslastung</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: T.tx, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{Math.round(dHours)} h</div>
+                      <div style={{ fontSize: 11, color: Math.abs(dUtil - 100) <= 10 ? T.okT : T.wT, fontWeight: 700, marginTop: 3 }}>Ø {dUtil}% Auslastung</div>
+                    </div>
+                  </div>
+                  {dGaps > 0 && <div style={{ padding: "10px 12px", background: T.er, borderRadius: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: dGapDays.length ? 8 : 0 }}>
+                      <Icon n="alert" s={14} style={{ color: T.erT, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: T.erT, flex: 1 }}>{dGaps} Tag{dGaps > 1 ? "e" : ""} unterbesetzt</span>
+                      <button style={{ ...btn("er", true), padding: "3px 9px", fontSize: 11 }} onClick={() => { setPlanMo(cm); setATab("sched"); }}><Icon n="pencil" s={12} />Beheben</button>
+                    </div>
+                    {dGapDays.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {dGapDays.slice(0, 8).map(({ d, dow, gs }) => (
+                        <div key={d} style={{ fontSize: 11, color: T.erT, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 700, minWidth: 52 }}>{dow} {d + 1}.</span>
+                          {gs.map(g => <span key={g.key} style={{ background: "rgba(0,0,0,0.1)", borderRadius: 5, padding: "1px 7px", fontWeight: 600 }}>{g.label} {g.has}/{g.need}</span>)}
+                        </div>
+                      ))}
+                      {dGapDays.length > 8 && <div style={{ fontSize: 10, color: T.erT, opacity: 0.7, marginTop: 1 }}>+{dGapDays.length - 8} weitere Tage</div>}
+                    </div>}
+                  </div>}
+                </>}
+          </div>
+
+          {/* ── TEAM-AUSLASTUNG ───────────────────────────── */}
+          {dSc && (() => {
             const rows = planEmps.map(e => {
-              const ist = calcHours(curSc[e.id] || []);
-              const soll = targetHours(e, days);
+              const ist = calcHours(dSc[e.id] || []);
+              const soll = targetHours(e, ddays);
               const pct = soll > 0 ? Math.round(ist / soll * 100) : 0;
-              const shifts = (curSc[e.id] || []).filter(x => shiftDefs.some(s => s.key === x)).length;
+              const shifts = (dSc[e.id] || []).filter(x => shiftDefs.some(s => s.key === x)).length;
               return { e, ist, soll, pct, shifts };
             }).sort((a, b) => a.pct - b.pct);
             if (!rows.length) return null;
@@ -309,23 +388,23 @@ export default function AdminView() {
             return (
               <div style={{ ...crd, marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Auslastung pro Mitarbeiter</h3>
-                  {under > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.erT }}>{under} unter 80 %</span>}
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Team-Auslastung</h3>
+                  <span style={{ fontSize: 11, color: T.tx2 }}>{dlbl}</span>
+                  {under > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.erT, marginLeft: "auto" }}>{under} unter 80 %</span>}
                 </div>
-                <p style={{ margin: "0 0 12px", fontSize: 11, color: T.tx2 }}>Geplante Ist-Stunden gegen Soll ({plbl}). Unterbesetzte zuerst.</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 10 }}>
                   {rows.map(({ e, ist, soll, pct, shifts }) => {
                     const col = pct === 0 ? T.tx2 : pct < 80 ? T.erT : pct > 110 ? T.wT : T.okT;
                     return (
                       <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <Avatar emp={e} size={28} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 3 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 4 }}>
                             <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
-                            <span style={{ color: T.tx2, whiteSpace: "nowrap" }}>{fmtH(ist)} / {fmtH(soll)} · {shifts} Schichten</span>
+                            <span style={{ color: T.tx2, whiteSpace: "nowrap", fontSize: 11 }}>{fmtH(ist)} / {fmtH(soll)} · {shifts} Schichten</span>
                           </div>
-                          <div style={{ height: 7, background: T.bg3, borderRadius: 5, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: col, borderRadius: 5 }} />
+                          <div style={{ height: 6, background: T.bg3, borderRadius: 4, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: col, borderRadius: 4 }} />
                           </div>
                         </div>
                         <span style={{ fontSize: 13, fontWeight: 800, color: col, fontFamily: "'Schibsted Grotesk',sans-serif", minWidth: 42, textAlign: "right" }}>{pct}%</span>
@@ -336,11 +415,19 @@ export default function AdminView() {
               </div>
             );
           })()}
-          <div style={{ ...crd, marginBottom: 14 }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>Wer arbeitet heute? · {today.getDate()}. {MF[today.getMonth()]}</h3>
-            {!todTeam.length ? <p style={{ color: T.tx2, fontSize: 13, margin: 0 }}>Kein Plan für heute.</p> : shiftDefs.map(def => { const w = todTeam.filter(x => x.sh === def.key); return (<div key={def.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", background: shBg(def.key), borderRadius: 12, marginBottom: 7, flexWrap: "wrap" }}><span style={{ background: shX(def.key), color: "#fff", borderRadius: 7, padding: "3px 8px", fontWeight: 800, fontSize: 11 }}>{def.key}</span><span style={{ fontSize: 12, fontWeight: 700, color: shC(def.key), minWidth: 100 }}>{def.label} {def.start}–{def.end}</span>{!w.length ? <span style={{ fontSize: 12, color: T.erT, marginLeft: "auto", fontWeight: 600 }}>unbesetzt</span> : <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginLeft: "auto" }}>{w.map(x => <span key={x.e.id} style={{ fontSize: 11, background: T.card, padding: "2px 9px", borderRadius: 20, fontWeight: 600 }}>{x.e.name}</span>)}{w.length < def.required && <span style={{ fontSize: 12, color: T.erT }}>unterbesetzt</span>}</div>}</div>); })}
+
+          {/* ── SCHNELL-AKTIONEN ──────────────────────────── */}
+          <div style={{ display: "grid", gridTemplateColumns: pendCount ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 4 }}>
+            {pendCount > 0 && <button onClick={() => setATab("reqs")} style={{ ...crd, textAlign: "left", padding: "13px 15px", cursor: "pointer", background: T.w, borderColor: T.wT + "40", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: T.wT + "20", color: T.wT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="inbox" s={17} /></div>
+              <div><div style={{ fontSize: 18, fontWeight: 800, color: T.wT, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{pendCount}</div><div style={{ fontSize: 11, color: T.wT, marginTop: 3 }}>Offene Anfragen</div></div>
+            </button>}
+            <button onClick={() => setATab("staff")} style={{ ...crd, textAlign: "left", padding: "13px 15px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: T.acc + "14", color: T.acc, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="users" s={17} /></div>
+              <div><div style={{ fontSize: 18, fontWeight: 800, color: T.tx, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{emps.length}</div><div style={{ fontSize: 11, color: T.tx2, marginTop: 3 }}>Mitarbeiter im Team</div></div>
+            </button>
           </div>
-        </div>}
+        </div>; })()}
 
         {aTab === "staff" && <div>
           {can("manageStaff") && <div style={{ ...crd, marginBottom: 12 }}>
