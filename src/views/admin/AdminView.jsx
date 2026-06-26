@@ -89,23 +89,85 @@ export default function AdminView() {
           </>}
       </div></div>}
 
-      {editE && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editE.name}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditE(null)}><Icon n="x" s={15} /></button></div>
-        <label style={lbl}>Name</label><input style={inp} value={ef.name || ""} onChange={e => setEf(p => ({ ...p, name: e.target.value }))} />
-        <label style={lbl}>Login-ID</label><input style={inp} value={ef.lid || ""} onChange={e => setEf(p => ({ ...p, lid: e.target.value }))} />
-        <label style={lbl}>Schichtpräferenz</label><select style={inp} value={ef.pref || "any"} onChange={e => setEf(p => ({ ...p, pref: e.target.value }))}>{PR.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s => <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select>
-        <label style={lbl}>Stellenumfang (%)</label><input type="number" min="10" max="100" step="5" style={inp} value={ef.workPct || 100} onChange={e => setEf(p => ({ ...p, workPct: e.target.value }))} />
-        <p style={{ fontSize: 10, color: T.tx2, margin: "3px 0 0" }}>z. B. 100 = Vollzeit ({weekStdHours}h), 50 = halbe Stelle ({weekStdHours / 2}h)</p>
-        <label style={lbl}>Rolle</label><select style={inp} value={ef.role || "staff"} onChange={e => setEf(p => ({ ...p, role: e.target.value }))} disabled={editE.role === "owner" && !isOwner}>
-          <option value="staff">Mitarbeiter</option><option value="manager">Shopleiter</option><option value="director">Geschäftsführer</option>
-          {(isOwner || editE.role === "owner") && <option value="owner">Inhaber</option>}
-        </select>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "9px 12px", background: T.bg2, borderRadius: 10 }}>
-          <input type="checkbox" id="editInPlan" checked={ef.inPlan !== false} onChange={e => setEf(p => ({ ...p, inPlan: e.target.checked }))} />
-          <label htmlFor="editInPlan" style={{ fontSize: 12, cursor: "pointer", flex: 1 }}>Bei Dienstplan-Erstellung berücksichtigen</label>
-        </div>
-        <p style={{ fontSize: 10, color: T.tx2, margin: "4px 0 0" }}>Inhaber & Geschäftsführer üblicherweise deaktiviert, da nicht im Schichtbetrieb.</p>
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => setEditE(null)}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={saveEf}>Speichern</button></div>
-      </div></div>}
+      {editE && (() => {
+        const DOW_ORDER = [1,2,3,4,5,6,0];
+        const DOW_LABELS = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+        const allShiftKeys = shiftDefs.map(s => s.key);
+        const isAvail = (dow, sh) => { if (!ef.avail || !ef.avail[String(dow)]) return true; return ef.avail[String(dow)].includes(sh); };
+        const toggleAvail = (dow, sh) => setEf(p => {
+          const cur = { ...(p.avail || {}) };
+          const key = String(dow);
+          const curArr = cur[key] ? [...cur[key]] : [...allShiftKeys];
+          const next = curArr.includes(sh) ? curArr.filter(x => x !== sh) : [...curArr, sh];
+          if (next.length >= allShiftKeys.length) { delete cur[key]; } else { cur[key] = next; }
+          const hasAny = Object.keys(cur).some(k => cur[k] && cur[k].length < allShiftKeys.length);
+          return { ...p, avail: hasAny ? cur : null };
+        });
+        const resetAvail = () => setEf(p => ({ ...p, avail: null }));
+        const hasRestrictions = !!(ef.avail && Object.keys(ef.avail).some(k => ef.avail[k]?.length < allShiftKeys.length));
+        return (
+          <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 460, maxHeight: "92vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editE.name}</h3>
+              <button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditE(null)}><Icon n="x" s={15} /></button>
+            </div>
+            <label style={lbl}>Name</label><input style={inp} value={ef.name || ""} onChange={e => setEf(p => ({ ...p, name: e.target.value }))} />
+            <label style={lbl}>Login-ID</label><input style={inp} value={ef.lid || ""} onChange={e => setEf(p => ({ ...p, lid: e.target.value }))} />
+            <label style={lbl}>Schichtpräferenz</label>
+            <select style={inp} value={ef.pref || "any"} onChange={e => setEf(p => ({ ...p, pref: e.target.value }))}>{PR.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s => <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select>
+            <label style={lbl}>Stellenumfang (%)</label>
+            <input type="number" min="10" max="100" step="5" style={inp} value={ef.workPct || 100} onChange={e => setEf(p => ({ ...p, workPct: e.target.value }))} />
+            <p style={{ fontSize: 10, color: T.tx2, margin: "3px 0 8px" }}>z. B. 100 = Vollzeit ({weekStdHours}h), 50 = halbe Stelle ({weekStdHours / 2}h)</p>
+            <label style={lbl}>Max. Arbeitstage pro Woche</label>
+            <select style={inp} value={ef.maxDaysPerWeek || ""} onChange={e => setEf(p => ({ ...p, maxDaysPerWeek: e.target.value ? Number(e.target.value) : null }))}>
+              <option value="">Keine Einschränkung</option>
+              {[2,3,4,5,6].map(n => <option key={n} value={n}>{n} Tage / Woche</option>)}
+            </select>
+            <p style={{ fontSize: 10, color: T.tx2, margin: "3px 0 0" }}>z. B. 3 für Teilzeit-Mitarbeiter die nur bestimmte Wochentage arbeiten.</p>
+
+            {/* Verfügbarkeitsmatrix */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, marginBottom: 6 }}>
+              <label style={{ ...lbl, margin: 0 }}>Verfügbarkeit nach Wochentag</label>
+              {hasRestrictions && <button style={{ ...btn("s", true), fontSize: 10, padding: "3px 8px" }} onClick={resetAvail}>Alles freigeben</button>}
+            </div>
+            <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 8px" }}>
+              {hasRestrictions ? "Graue Felder = nicht verfügbar. Antippen zum Umschalten." : "Aktuell alle Schichten an allen Tagen möglich. Antippen um einzuschränken."}
+            </p>
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ display: "grid", gridTemplateColumns: `80px repeat(7, 1fr)`, gap: 3, minWidth: 340 }}>
+                <div style={{ fontSize: 10, color: T.tx2 }} />
+                {DOW_LABELS.map(l => <div key={l} style={{ fontSize: 10, fontWeight: 700, color: T.tx2, textAlign: "center", padding: "2px 0" }}>{l}</div>)}
+                {shiftDefs.map(s => (
+                  <>{/* shift row */}
+                    <div key={s.key + "lbl"} style={{ fontSize: 11, fontWeight: 600, color: T.tx, display: "flex", alignItems: "center", paddingRight: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</div>
+                    {DOW_ORDER.map(dow => {
+                      const ok = isAvail(dow, s.key);
+                      return (
+                        <button key={dow} onClick={() => toggleAvail(dow, s.key)}
+                          style={{ padding: "5px 2px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, textAlign: "center", background: ok ? shBg(s.key) : T.bg3, color: ok ? shC(s.key) : T.tx2, opacity: ok ? 1 : 0.5 }}>
+                          {ok ? s.key : "–"}
+                        </button>
+                      );
+                    })}
+                  </>
+                ))}
+              </div>
+            </div>
+
+            <label style={{ ...lbl, marginTop: 14 }}>Rolle</label>
+            <select style={inp} value={ef.role || "staff"} onChange={e => setEf(p => ({ ...p, role: e.target.value }))} disabled={editE.role === "owner" && !isOwner}>
+              <option value="staff">Mitarbeiter</option><option value="manager">Shopleiter</option><option value="director">Geschäftsführer</option>
+              {(isOwner || editE.role === "owner") && <option value="owner">Inhaber</option>}
+            </select>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "9px 12px", background: T.bg2, borderRadius: 10 }}>
+              <input type="checkbox" id="editInPlan" checked={ef.inPlan !== false} onChange={e => setEf(p => ({ ...p, inPlan: e.target.checked }))} />
+              <label htmlFor="editInPlan" style={{ fontSize: 12, cursor: "pointer", flex: 1 }}>Bei Dienstplan-Erstellung berücksichtigen</label>
+            </div>
+            <p style={{ fontSize: 10, color: T.tx2, margin: "4px 0 0" }}>Inhaber & Geschäftsführer üblicherweise deaktiviert, da nicht im Schichtbetrieb.</p>
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => setEditE(null)}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={saveEf}>Speichern</button></div>
+          </div></div>
+        );
+      })()}
 
       {rstE && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 360 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>PIN: {rstE.name}</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setRstE(null); setRstP(""); }}><Icon n="x" s={15} /></button></div><label style={lbl}>Neuer PIN (≥4)</label><input style={{ ...inp, fontSize: 24, letterSpacing: 10, textAlign: "center", fontWeight: 700 }} value={rstP} onChange={e => setRstP(e.target.value)} /><div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => { setRstE(null); setRstP(""); }}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={doRst}>Setzen</button></div></div></div>}
 
@@ -449,7 +511,7 @@ export default function AdminView() {
           <div style={crd}>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Team ({emps.length})</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
+              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
             </div>
           </div>
         </div>}

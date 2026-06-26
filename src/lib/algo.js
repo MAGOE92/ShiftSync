@@ -41,6 +41,8 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
   const workedHours = {}; emps.forEach(e => workedHours[e.id] = 0);
   // Per-Schicht-Zähler für Ausgewogenheit (besonders "FS"-Präferenz)
   const shiftCounts = {}; emps.forEach(e => shiftCounts[e.id] = {});
+  // Max. Arbeitstage pro Woche: Zähler je Mitarbeiter je Kalender-Woche (0-basiert im Monat)
+  const weekDayCount = {}; emps.forEach(e => weekDayCount[e.id] = {});
 
   // Nicht-Nacht- und Nacht-Schichten trennen für rotierende Tagesreihenfolge
   const nonNightDefs = shiftDefs.filter(s => !isNightShift(s));
@@ -86,6 +88,17 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
             if (!canWork(sc, e.id, d, sh, shiftDefs)) return false;
             if (pass === 0 && ws[e.id].has(d)) return false;
             if (workedHours[e.id] + shHours > monthlyTargetHours[e.id] * capF + 0.01) return false;
+            // Wochentag-Verfügbarkeit: avail[dow] = Array erlaubter Schicht-Keys, fehlt = alle erlaubt
+            if (e.avail) {
+              const dow = new Date(y, mo - 1, d + 1).getDay();
+              const allowed = e.avail[String(dow)];
+              if (allowed && !allowed.includes(sh)) return false;
+            }
+            // Max. Arbeitstage pro Woche (7-Tage-Fenster ab Monatsanfang)
+            if (e.maxDaysPerWeek) {
+              const wn = Math.floor(d / 7);
+              if ((weekDayCount[e.id][wn] || 0) >= e.maxDaysPerWeek) return false;
+            }
             return true;
           })
           .map(e => {
@@ -101,6 +114,8 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
             sc[e.id][d] = sh;
             workedHours[e.id] += shHours;
             shiftCounts[e.id][sh] = (shiftCounts[e.id][sh] || 0) + 1;
+            const wn = Math.floor(d / 7);
+            weekDayCount[e.id][wn] = (weekDayCount[e.id][wn] || 0) + 1;
             got++;
           }
         });
