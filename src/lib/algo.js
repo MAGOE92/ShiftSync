@@ -94,9 +94,12 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
               const allowed = e.avail[String(dow)];
               if (allowed && !allowed.includes(sh)) return false;
             }
-            // Max. Arbeitstage pro Woche (7-Tage-Fenster ab Monatsanfang)
+            // Max. Arbeitstage pro Woche — echte Kalenderwoche (Mo=Start)
             if (e.maxDaysPerWeek) {
-              const wn = Math.floor(d / 7);
+              const dt = new Date(y, mo - 1, d + 1);
+              // ISO-ähnliche Wochennummer: Tage seit einem bekannten Montag geteilt durch 7
+              const daysSinceEpochMonday = Math.floor((dt.getTime() - new Date(1970, 0, 5).getTime()) / 86400000);
+              const wn = Math.floor(daysSinceEpochMonday / 7);
               if ((weekDayCount[e.id][wn] || 0) >= e.maxDaysPerWeek) return false;
             }
             return true;
@@ -114,8 +117,9 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
             sc[e.id][d] = sh;
             workedHours[e.id] += shHours;
             shiftCounts[e.id][sh] = (shiftCounts[e.id][sh] || 0) + 1;
-            const wn = Math.floor(d / 7);
-            weekDayCount[e.id][wn] = (weekDayCount[e.id][wn] || 0) + 1;
+            const _dt = new Date(y, mo - 1, d + 1);
+            const _wn = Math.floor((_dt.getTime() - new Date(1970, 0, 5).getTime()) / 86400000 / 7);
+            weekDayCount[e.id][_wn] = (weekDayCount[e.id][_wn] || 0) + 1;
             got++;
           }
         });
