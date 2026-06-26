@@ -123,7 +123,11 @@ export default function AdminView() {
               <option value="">Keine Einschränkung</option>
               {[2,3,4,5,6].map(n => <option key={n} value={n}>{n} Tage / Woche</option>)}
             </select>
-            <p style={{ fontSize: 10, color: T.tx2, margin: "3px 0 0" }}>z. B. 3 für Teilzeit-Mitarbeiter die nur bestimmte Wochentage arbeiten.</p>
+            {ef.maxDaysPerWeek
+              ? <p style={{ fontSize: 10, color: T.wT, margin: "3px 0 0", background: T.w, borderRadius: 6, padding: "4px 8px" }}>
+                  Entspricht ca. {Math.round(ef.maxDaysPerWeek / 5 * (ef.workPct || 100))}% Auslastung/Woche — Stellenumfang oben ggf. anpassen (aktuell {ef.workPct || 100}%).
+                </p>
+              : <p style={{ fontSize: 10, color: T.tx2, margin: "3px 0 0" }}>z. B. 3 für Teilzeit-Mitarbeiter die nur bestimmte Wochentage arbeiten.</p>}
 
             {/* Verfügbarkeitsmatrix */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, marginBottom: 6 }}>
