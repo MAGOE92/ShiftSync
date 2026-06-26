@@ -649,6 +649,18 @@ export default function AdminView() {
             <label style={lbl}>Name</label><input style={inp} value={orgEd?.name ?? org.name} onChange={e => setOrgEd(p => ({ ...(p || { name: org.name, sub: org.sub, weekStdHours: org.weekStdHours || 40 }), name: e.target.value }))} />
             <label style={lbl}>Untertitel</label><input style={inp} value={orgEd?.sub ?? org.sub} onChange={e => setOrgEd(p => ({ ...(p || { name: org.name, sub: org.sub, weekStdHours: org.weekStdHours || 40 }), sub: e.target.value }))} />
             <label style={lbl}>Standard-Wochenstunden (Vollzeit)</label><input style={inp} type="number" min="20" max="48" value={orgEd?.weekStdHours ?? weekStdHours} onChange={e => setOrgEd(p => ({ ...(p || { name: org.name, sub: org.sub, weekStdHours: org.weekStdHours || 40 }), weekStdHours: Number(e.target.value) || 40 }))} />
+            <div style={{ marginTop: 12, padding: "11px 13px", background: T.bg2, borderRadius: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Verfügbarkeit — Wer darf sie hinterlegen?</div>
+              {[["adminOnly", "Nur Admins / Shopleiter (Standard)"], ["empSelf", "Mitarbeiter hinterlegen selbst im Profil"]].map(([v, l]) => (
+                <label key={v} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, cursor: "pointer", fontSize: 12 }}>
+                  <input type="radio" name="availMode" value={v}
+                    checked={(orgEd?.availMode ?? org.availMode ?? "adminOnly") === v}
+                    onChange={() => setOrgEd(p => ({ ...(p || { name: org.name, sub: org.sub, weekStdHours: org.weekStdHours || 40 }), availMode: v }))} />
+                  {l}
+                </label>
+              ))}
+              <p style={{ fontSize: 10, color: T.tx2, margin: "6px 0 0" }}>Im Modus "Mitarbeiter selbst" erscheint die Verfügbarkeits-Matrix im Profil-Tab jedes Mitarbeiters und wird vom Auto-Planer übernommen.</p>
+            </div>
             {orgEd && <button style={{ ...btn("p"), marginTop: 14 }} onClick={saveOrgEdits}><Icon n="check" s={15} />Speichern</button>}
             <label style={lbl}>Akzentfarbe</label>
             <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginTop: 2 }}>

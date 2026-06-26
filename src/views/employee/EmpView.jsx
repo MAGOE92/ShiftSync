@@ -16,7 +16,7 @@ export default function EmpView() {
     getShiftInfo, shBg, shC, shX, doICS,
     setIsSuper, setWasSuper, setOrgId, setMe, setView, setATab,
     flash, logout, doClock, offerShift, withdrawOffer, takeShift,
-    saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac,
+    saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac, patchEmp,
     pm, nms,
     Tst, DarkBtn, NotifBell, NotifPanel, Header, TabBar, Avatar,
   } = useApp();
@@ -355,6 +355,50 @@ export default function EmpView() {
               {PR.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}
               {shiftDefs.map(s => <option key={s.key} value={s.key}>Nur {s.label}</option>)}
             </select>
+            {(org.availMode ?? "adminOnly") === "empSelf" && (() => {
+              const DOW_ORDER = [1,2,3,4,5,6,0];
+              const DOW_LABELS = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+              const allShiftKeys = shiftDefs.map(s => s.key);
+              const isAvail = (dow, sh) => { if (!me.avail || !me.avail[String(dow)]) return true; return me.avail[String(dow)].includes(sh); };
+              const toggleAvail = async (dow, sh) => {
+                const cur = { ...(me.avail || {}) };
+                const key = String(dow);
+                const curArr = cur[key] ? [...cur[key]] : [...allShiftKeys];
+                const next = curArr.includes(sh) ? curArr.filter(x => x !== sh) : [...curArr, sh];
+                if (next.length >= allShiftKeys.length) { delete cur[key]; } else { cur[key] = next; }
+                const hasAny = Object.keys(cur).some(k => cur[k] && cur[k].length < allShiftKeys.length);
+                await patchEmp(me.id, { avail: hasAny ? cur : null });
+              };
+              const saveMaxDays = async (v) => { await patchEmp(me.id, { maxDaysPerWeek: v || null }); };
+              const hasRestrictions = !!(me.avail && Object.keys(me.avail).some(k => me.avail[k]?.length < allShiftKeys.length));
+              return <>
+                <label style={{ ...lbl, marginTop: 14 }}>Max. Arbeitstage pro Woche</label>
+                <select style={inp} value={me.maxDaysPerWeek || ""} onChange={e => saveMaxDays(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Keine Einschränkung</option>
+                  {[2,3,4,5,6].map(n => <option key={n} value={n}>{n} Tage / Woche</option>)}
+                </select>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, marginBottom: 4 }}>
+                  <label style={{ ...lbl, margin: 0 }}>Meine Verfügbarkeit nach Wochentag</label>
+                  {hasRestrictions && <button style={{ fontSize: 10, color: T.acc, background: "none", border: "none", cursor: "pointer", padding: 0 }} onClick={() => patchEmp(me.id, { avail: null })}>Alles freigeben</button>}
+                </div>
+                <p style={{ fontSize: 10, color: T.tx2, margin: "0 0 8px" }}>{hasRestrictions ? "Graue Felder = nicht verfügbar. Antippen zum Umschalten." : "Aktuell alle Schichten an allen Tagen möglich."}</p>
+                <div style={{ overflowX: "auto" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "80px repeat(7, 1fr)", gap: 3, minWidth: 320 }}>
+                    <div />
+                    {DOW_LABELS.map(l => <div key={l} style={{ fontSize: 10, fontWeight: 700, color: T.tx2, textAlign: "center" }}>{l}</div>)}
+                    {shiftDefs.map(s => (
+                      <>{/* eslint-disable-next-line react/jsx-key */}
+                        <div style={{ fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", paddingRight: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
+                        {DOW_ORDER.map(dow => {
+                          const ok = isAvail(dow, s.key);
+                          return <button key={dow} onClick={() => toggleAvail(dow, s.key)} style={{ padding: "5px 2px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, textAlign: "center", background: ok ? shBg(s.key) : T.bg3, color: ok ? shC(s.key) : T.tx2, opacity: ok ? 1 : 0.5 }}>{ok ? s.key : "–"}</button>;
+                        })}
+                      </>
+                    ))}
+                  </div>
+                </div>
+              </>;
+            })()}
           </div>
           <div style={crd}>
             <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>PIN ändern</h3>
