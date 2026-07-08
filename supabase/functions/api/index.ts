@@ -24,12 +24,12 @@ const DEFAULT_SHIFTS = [
   { key: "S", label: "Spät", start: "14:00", end: "22:00", required: 2, colorIdx: 1 },
   { key: "N", label: "Nacht", start: "22:00", end: "06:00", required: 1, colorIdx: 2 },
 ];
-const PERM_KEYS = ["createPlan", "approveVac", "approveSick", "approveSwap", "manageStaff", "resetPins", "manageShifts", "manageOrg"];
+const PERM_KEYS = ["createPlan", "approveVac", "approveSick", "approveSwap", "manageStaff", "absEntry", "resetPins", "manageShifts", "manageOrg"];
 const allPerms = (v: boolean) => Object.fromEntries(PERM_KEYS.map(k => [k, v]));
 const DEFAULT_PERMS = {
   owner: allPerms(true),
-  director: { createPlan: true, approveVac: true, approveSick: true, approveSwap: true, manageStaff: true, resetPins: true, manageShifts: false, manageOrg: false },
-  manager: { createPlan: true, approveVac: false, approveSick: true, approveSwap: true, manageStaff: false, resetPins: false, manageShifts: false, manageOrg: false },
+  director: { createPlan: true, approveVac: true, approveSick: true, approveSwap: true, manageStaff: true, absEntry: true, resetPins: true, manageShifts: false, manageOrg: false },
+  manager: { createPlan: true, approveVac: false, approveSick: true, approveSwap: true, manageStaff: false, absEntry: false, resetPins: false, manageShifts: false, manageOrg: false },
   staff: allPerms(false),
 };
 
@@ -159,6 +159,8 @@ function mapOrg(row: Any) {
     trialEnds: row.trial_ends ? new Date(row.trial_ends).getTime() : null,
     accent: row.accent, timeclock: row.timeclock || 'self',
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    // Freie Betriebseinstellungen (availMode, absEntryMode, regenLeadDays, …)
+    ...(row.settings || {}),
   };
 }
 
@@ -169,6 +171,8 @@ function mapEmp(row: Any) {
     role: row.role, workPct: row.work_pct, pref: row.pref,
     inPlan: row.in_plan, notes: row.notes || "",
     linkedOrgs: row.linked_orgs || [],
+    // Freie Profilfelder (avail, maxDaysPerWeek, vacDays, vacCarry, startDate, hrNotes, …)
+    ...(row.profile || {}),
   };
 }
 
@@ -270,6 +274,14 @@ async function saveOrgData(orgId: string, value: Any, session?: Session | null) 
       role: e.role || "staff", work_pct: Number(e.workPct) || 100,
       pref: e.pref || "any", in_plan: e.inPlan !== false,
       notes: e.notes || "", linked_orgs: e.linkedOrgs || [],
+      profile: {
+        avail: e.avail ?? null,
+        maxDaysPerWeek: e.maxDaysPerWeek ?? null,
+        vacDays: e.vacDays ?? null,
+        vacCarry: e.vacCarry ?? null,
+        startDate: e.startDate ?? null,
+        hrNotes: e.hrNotes ?? null,
+      },
     });
   }
   if (empRows.length) {
@@ -294,7 +306,7 @@ async function saveOrgData(orgId: string, value: Any, session?: Session | null) 
     created_at: r.at ? new Date(r.at).toISOString() : new Date().toISOString(),
     payload: {
       dates: r.dates, fromDate: r.fromDate, toDate: r.toDate,
-      toId: r.toId, date: r.date, note: r.note,
+      toId: r.toId, date: r.date, note: r.note, by: r.by,
     },
   }));
   if (reqRows.length) {
@@ -593,6 +605,8 @@ const ORG_SELF_FIELDS: Record<string, string> = {
   name: "name", sub: "sub", weekStdHours: "week_std_hours",
   shifts: "shifts", holidays: "holidays", perms: "perms", accent: "accent", timeclock: "timeclock",
 };
+// Freie Einstellungen, die gesammelt in orgs.settings (jsonb) landen
+const ORG_SETTINGS_FIELDS = ["availMode", "absEntryMode", "regenLeadDays"];
 
 async function actSet(body: Any, session: Session) {
   const key = String(body.key || "");
@@ -626,6 +640,9 @@ async function actSet(body: Any, session: Session) {
         patch[dbField] = appField === "weekStdHours" ? (Number(own[appField]) || 40) : own[appField];
       }
     }
+    const settings: Any = {};
+    for (const f of ORG_SETTINGS_FIELDS) if (own[f] !== undefined) settings[f] = own[f];
+    if (Object.keys(settings).length) patch.settings = settings;
     const { error } = await db.from("orgs").update(patch).eq("id", session.oid!);
     if (error) throw new ApiError("Speichern (Betrieb): " + error.message, 500);
     return ok({ ok: true });

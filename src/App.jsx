@@ -256,7 +256,7 @@ export default function App() {
   const seedDemo = async () => { const free = seatLimit - seatUsed; if (free <= 0) { flash("er", `Sitzplatz-Limit erreicht (${seatLimit}) – Upgrade nötig.`); return; } const demo = [{ name: "Ben Schmidt", lid: "ben.schmidt", pin: "2222", pref: "any", role: "director", workPct: 100, inPlan: false }, { name: "Clara Weber", lid: "clara.weber", pin: "3333", pref: "any", role: "manager", workPct: 100, inPlan: true }, { name: "David Koch", lid: "david.koch", pin: "4444", pref: "any", role: "staff", workPct: 100, inPlan: true }, { name: "Eva Bauer", lid: "eva.bauer", pin: "5555", pref: "any", role: "staff", workPct: 75, inPlan: true }, { name: "Frank Huber", lid: "frank.huber", pin: "6666", pref: "FS", role: "staff", workPct: 50, inPlan: true }, { name: "Gabi Stern", lid: "gabi.stern", pin: "7777", pref: "noN", role: "staff", workPct: 100, inPlan: true }].slice(0, free).map(e => ({ ...e, id: rid(), notes: "" })); await saveData({ ...data, emps: [...emps, ...demo] }); flash("ok", `${demo.length} Demo-Mitarbeiter ✓${demo.length < 6 ? ` (Limit ${seatLimit})` : ""}`); };
   const addEmp = async () => { const pinT = nef.pin.trim(); if (!nef.name.trim() || !nef.lid.trim() || pinT.length < 4) { flash("er", "Name, ID, PIN (≥4)"); return; } if (seatFull) { flash("er", `Sitzplatz-Limit erreicht (${seatLimit}). Upgrade nötig.`); return; } const lid = nef.lid.trim().toLowerCase(); if (emps.some(e => e.lid === lid)) { flash("er", "Login-ID vergeben"); return; } const e = { id: rid(), ...nef, pin: pinT, name: nef.name.trim(), lid, workPct: Number(nef.workPct) || 100 }; await saveData({ ...data, emps: [...emps, e] }); setNef({ name: "", lid: "", pin: "", pref: "any", role: "staff", workPct: 100, inPlan: true }); flash("ok", `${e.name} angelegt · PIN ${e.pin}`); };
   const saveEf = async () => { if (!ef.name?.trim() || !ef.lid?.trim()) { flash("er", "Name und ID"); return; } const lid = ef.lid.trim().toLowerCase(); if (emps.some(e => e.id !== editE.id && e.lid === lid)) { flash("er", "ID vergeben"); return; } await saveData({ ...data, emps: emps.map(e => e.id === editE.id ? { ...e, ...ef, name: ef.name.trim(), lid, workPct: Number(ef.workPct) || 100 } : e) }); if (me?.id === editE.id) setMe(p => ({ ...p, ...ef })); setEditE(null); flash("ok", "Gespeichert ✓"); };
-  const patchEmp = async (empId, patch) => { await saveData({ ...data, emps: emps.map(e => e.id === empId ? { ...e, ...patch } : e) }); };
+  const patchEmp = async (empId, patch) => { await saveData({ ...data, emps: emps.map(e => e.id === empId ? { ...e, ...patch } : e) }); if (me && me.id === empId) setMe(prev => ({ ...prev, ...patch })); };
   const doRst = async () => { const pinT = rstP.trim(); if (pinT.length < 4) { flash("er", "≥4 Zeichen"); return; } await saveData({ ...data, emps: emps.map(e => e.id === rstE.id ? { ...e, pin: pinT } : e) }); flash("ok", `Neuer PIN: ${rstP}`); setRstE(null); setRstP(""); };
   const delEmp = async emp => { if (emp.id === me.id) { flash("er", "Dich selbst nicht löschen"); return; } if (emp.role === "owner") { flash("er", "Inhaber nicht löschbar"); return; } await saveData({ ...data, emps: emps.filter(e => e.id !== emp.id) }); flash("ok", `${emp.name} entfernt`); };
   const toggleInPlan = async emp => { const next = !(emp.inPlan !== false); await saveData({ ...data, emps: emps.map(e => e.id === emp.id ? { ...e, inPlan: next } : e) }); flash("ok", `${emp.name} ${next ? "wird im Dienstplan berücksichtigt" : "aus dem Dienstplan genommen"}`); };
@@ -312,6 +312,54 @@ export default function App() {
 
   const handleReq = async (id, status, note) => { const req = reqList.find(r => r.id === id); const tL = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }[req?.type] || "Anfrage"; const nt = buildNotifs(req ? [{ uid: req.uid, type: status === "ok" ? "decision_ok" : "decision_no", text: `${tL} ${status === "ok" ? "genehmigt ✓" : "abgelehnt"}${note ? ` · „${note}"` : ""}` }] : []); await saveData({ ...data, reqs: reqList.map(r => r.id === id ? { ...r, status, decidedAt: Date.now(), decidedBy: me.id, decisionNote: note || "" } : r), notifs: [...allNotifs, ...nt] }); setEditReq(null); setDecNote(""); flash("ok", status === "ok" ? "Genehmigt ✓" : "Abgelehnt"); };
   const saveOrgEdits = async () => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, ...orgEd } : o)); setOrgEd(null); flash("ok", "Betrieb gespeichert ✓"); };
+
+  // Direkteintragung von Urlaub/Krankheit durch die Verwaltung (Perm: absEntry).
+  // Prüft Doppel-Einträge beim Mitarbeiter und Urlaubs-Überlappung im Team.
+  const addAbsence = async ({ empId, type, fromDate, toDate, note }) => {
+    const emp = emps.find(e => e.id === empId);
+    if (!emp) { flash("er", "Mitarbeiter wählen"); return false; }
+    if (!fromDate) { flash("er", "Datum wählen"); return false; }
+    const to = toDate || fromDate;
+    if (to < fromDate) { flash("er", "Bis-Datum liegt vor Von-Datum"); return false; }
+    let dates = datesBetween(fromDate, to);
+    if (type === "vac") dates = dates.filter(ds => !holidays.some(h => h.date === ds));
+    if (!dates.length) { flash("er", "Keine gültigen Tage im Zeitraum"); return false; }
+    const occupied = new Set();
+    reqList.filter(r => r.status === "ok" && r.uid === empId && (r.type === "vac" || r.type === "sick"))
+      .forEach(r => (r.dates || (r.fromDate ? datesBetween(r.fromDate, r.toDate || r.fromDate) : (r.date ? [r.date] : []))).forEach(ds => occupied.add(ds)));
+    const dup = dates.filter(ds => occupied.has(ds));
+    const fresh = dates.filter(ds => !occupied.has(ds));
+    if (!fresh.length) { flash("er", `${emp.name} hat an allen gewählten Tagen bereits Urlaub/Krankheit eingetragen`); return false; }
+    if (dup.length && !confirm(`Doppelt: ${emp.name} hat an ${dup.length} Tag(en) bereits eine Abwesenheit.\n\nNur die übrigen ${fresh.length} Tag(e) eintragen?`)) return false;
+    const overlapNames = [...new Set(reqList
+      .filter(r => r.status === "ok" && r.uid !== empId && r.type === "vac" && (r.dates || []).some(ds => fresh.includes(ds)))
+      .map(r => emps.find(e => e.id === r.uid)?.name).filter(Boolean))];
+    if (overlapNames.length && !confirm(`Hinweis: Im selben Zeitraum haben bereits Urlaub: ${overlapNames.join(", ")}.\n\nTrotzdem eintragen?`)) return false;
+    const tL = type === "vac" ? "Urlaub" : "Krankmeldung";
+    const r = { id: rid(), type, uid: empId, status: "ok", at: Date.now(), decidedAt: Date.now(), decidedBy: me.id, by: "admin", note: note || "", fromDate, toDate: to, dates: fresh.sort() };
+    const nt = buildNotifs([{ uid: empId, type: "decision_ok", text: `${tL} (${fresh.length} Tag(e) ab ${new Date(fresh[0] + "T12:00:00").toLocaleDateString("de-DE")}) wurde von der Verwaltung eingetragen` }]);
+    await saveData({ ...data, reqs: [...reqList, r], notifs: [...allNotifs, ...nt] });
+    flash("ok", `${tL} für ${emp.name} eingetragen ✓ (${fresh.length} Tag(e))`);
+    return true;
+  };
+
+  // Teilneuverteilung: bestehenden Plan ab Tag X neu verteilen (Tage davor bleiben fix).
+  // Ergebnis landet als Entwurf im Bearbeitungsmodus — prüfen, dann veröffentlichen.
+  const regenGaps = async fromDay => {
+    if (!canAuto) { flash("er", "Automatische Planung ist ab Tarif Pro verfügbar"); return; }
+    const base = scheds[planMo]; if (!base) { flash("er", "Kein Plan vorhanden"); return; }
+    const planEmps = emps.filter(e => e.inPlan !== false);
+    if (planEmps.length < 3) { flash("er", `Mind. 3 Mitarbeiter im Plan (aktuell: ${planEmps.length})`); return; }
+    const { y, m0, days, lbl } = pm(planMo);
+    const fd = Math.max(1, Math.min(days, fromDay));
+    const wm = {}; planEmps.forEach(e => { const arr = []; Object.entries(wishes).forEach(([k, v]) => { if (k.startsWith(planMo + "-") && k.endsWith(e.id) && v && Array.isArray(v.days)) v.days.forEach(d => arr.push(d)); }); wm[e.id] = arr; });
+    const absM = absMap();
+    const merged = {}; Object.keys(base).forEach(id => { merged[id] = [...base[id]]; (absM[id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= days) merged[id][day - 1] = type; }); });
+    const sc = algo(planEmps, wm, absM, y, m0, shiftDefs, weekStdHours, { baseSc: merged, fromDay: fd });
+    emps.filter(e => e.inPlan === false).forEach(e => { sc[e.id] = merged[e.id] || Array(days).fill("-"); });
+    setDraft(sc); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); setATab("sched");
+    flash("ok", `Plan ab ${fd}. ${lbl} neu verteilt — bitte prüfen und veröffentlichen`);
+  };
   const setAccent = async c => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, accent: c } : o)); flash("ok", "Akzentfarbe übernommen"); };
   const setTimeclock = async v => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, timeclock: v } : o)); flash("ok", "Stempeluhr-Einstellung gespeichert ✓"); };
   const saveShift = async () => { const s = editShift; if (!s.label.trim() || !s.key.trim()) { flash("er", "Bezeichnung und Kürzel nötig"); return; } const newShifts = s.idx === undefined ? [...shiftDefs, s] : shiftDefs.map((x, i) => i === s.idx ? s : x); await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, shifts: newShifts } : o)); setEditShift(null); flash("ok", "Schichtmodell gespeichert ✓"); };
@@ -427,7 +475,7 @@ export default function App() {
     seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
     doClock, istHoursMonth, exportPayroll, offerShift, withdrawOffer, takeShift,
-    handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
+    handleReq, saveOrgEdits, addAbsence, regenGaps, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
     setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac,
     buildNotifs, markAllRead, markNotifRead, clearMyNotifs,
     setOrgStatus, setOrgPlan, startCheckout,

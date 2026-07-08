@@ -23,7 +23,7 @@ export default function AdminView() {
     flash, clockData,
     seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
-    refreshData, exportPayroll, handleReq, saveOrgEdits, setAccent, setTimeclock, saveShift, delShift,
+    refreshData, exportPayroll, handleReq, saveOrgEdits, addAbsence, regenGaps, setAccent, setTimeclock, saveShift, delShift,
     addHoliday, delHoliday, setPerm, printPlan, exportCSV,
     setOrgStatus, setOrgPlan, setIsSuper, setWasSuper, setOrgId, setData, setMe, setView,
     startCheckout, logout,
@@ -35,6 +35,7 @@ export default function AdminView() {
   const [hrEmp, setHrEmp] = useState(null);
   const [hrTab, setHrTab] = useState("overview");
   const [hrEf, setHrEf] = useState({});
+  const [absForm, setAbsForm] = useState({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" });
 
   const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const MonthNav = ({ value, onChange }) => {
@@ -527,6 +528,19 @@ export default function AdminView() {
               <button style={{ ...btn("s", true), marginLeft: "auto" }} onClick={refreshData} title="Neu laden"><Icon n="repeat" s={14} /></button>
             </div>
           </div>
+          {can("absEntry") && (org.absEntryMode ?? "both") !== "emp" && <div style={{ ...crd, marginBottom: 12 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700 }}>Abwesenheit eintragen</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 11, color: T.tx2 }}>Urlaub oder Krankheit direkt eintragen — wird sofort genehmigt, erscheint im Dienstplan und in der Mitarbeiterakte. Der Mitarbeiter wird benachrichtigt.</p>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+              <div><label style={lbl}>Mitarbeiter</label><select style={inp} value={absForm.empId} onChange={e => setAbsForm(p => ({ ...p, empId: e.target.value }))}><option value="">– wählen –</option>{emps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+              <div><label style={lbl}>Art</label><select style={inp} value={absForm.type} onChange={e => setAbsForm(p => ({ ...p, type: e.target.value }))}><option value="vac">Urlaub</option><option value="sick">Krankheit</option></select></div>
+              <div><label style={lbl}>Von</label><input style={inp} type="date" value={absForm.fromDate} onChange={e => setAbsForm(p => ({ ...p, fromDate: e.target.value }))} /></div>
+              <div><label style={lbl}>Bis (optional)</label><input style={inp} type="date" min={absForm.fromDate || undefined} value={absForm.toDate} onChange={e => setAbsForm(p => ({ ...p, toDate: e.target.value }))} /></div>
+            </div>
+            <label style={lbl}>Notiz (optional, für den Mitarbeiter sichtbar)</label>
+            <input style={inp} value={absForm.note} placeholder="z. B. telefonisch krankgemeldet" onChange={e => setAbsForm(p => ({ ...p, note: e.target.value }))} />
+            <button style={{ ...btn("p"), marginTop: 12 }} onClick={async () => { const ok = await addAbsence(absForm); if (ok) setAbsForm({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" }); }}><Icon n="check" s={15} />Eintragen</button>
+          </div>}
           <div style={crd}>
             <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>{reqFilter === "pending" ? "Offene Anfragen" : reqFilter === "ok" ? "Genehmigt" : reqFilter === "no" ? "Abgelehnt" : "Archiv"}</h3>
             {!filteredReqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "24px 0", margin: 0, fontSize: 13 }}>Keine Einträge.</p>}
@@ -536,6 +550,7 @@ export default function AdminView() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name || "?"}</span>
                     <span style={{ fontSize: 11, color: T.tx2, background: T.bg3, borderRadius: 20, padding: "2px 8px" }}>{tL[r.type]}</span>
+                    {r.by === "admin" && <span style={{ fontSize: 10, color: T.tx2, border: `1px solid ${T.bord}`, borderRadius: 20, padding: "1px 7px" }}>von Verwaltung eingetragen</span>}
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: bg, color: col, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, marginLeft: "auto" }}><Icon n={ic} s={11} />{sl}</span>
                   </div>
                   {whenStr && <div style={{ fontSize: 12, color: T.tx, fontWeight: 500, marginBottom: 4 }}>{whenStr}</div>}
@@ -566,7 +581,17 @@ export default function AdminView() {
               <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)} style={{ ...inp, width: "auto", padding: "6px 10px", fontSize: 12 }}><option value="all">Alle</option>{emps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
               <select value={filterShift} onChange={e => setFilterShift(e.target.value)} style={{ ...inp, width: "auto", padding: "6px 10px", fontSize: 12 }}><option value="all">Alle Schichten</option>{shiftDefs.map(s => <option key={s.key} value={s.key}>Nur {s.label}</option>)}<option value="U">Nur Urlaub</option><option value="K">Nur Krank</option></select>
             </div>
-            {curSc && !editMode && gaps > 0 && <div style={{ marginTop: 10, padding: "8px 13px", background: T.er, borderRadius: 10, fontSize: 12, color: T.erT, fontWeight: 600 }}>{gaps} Tag(e) unterbesetzt.</div>}
+            {curSc && !editMode && gaps > 0 && (() => {
+              const isCurMonth = planMo === cm;
+              const minDay = isCurMonth ? today.getDate() + 1 : 1;
+              const futureGaps = gapDays.filter(g => g.d + 1 >= minDay);
+              const lead = Number(org.regenLeadDays ?? 2);
+              const suggested = futureGaps.length ? Math.max(minDay, futureGaps[0].d + 1 - lead) : null;
+              return <div style={{ marginTop: 10, padding: "10px 13px", background: T.er, borderRadius: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: T.erT, fontWeight: 600, flex: 1 }}>{gaps} Tag(e) unterbesetzt.{suggested && canAuto ? ` Vorschlag: ab ${suggested}. neu verteilen (Vorlauf ${lead} Tag(e), frühere Tage bleiben unverändert).` : ""}</span>
+                {suggested && canAuto && can("createPlan") && <button style={btn("er", true)} onClick={() => regenGaps(suggested)}><Icon n="sparkle" s={13} />Ab {suggested}. neu verteilen</button>}
+              </div>;
+            })()}
             {editMode && <div style={{ marginTop: 10, padding: "10px 13px", background: T.bg2, borderRadius: 10 }}><div style={{ fontSize: 12, color: T.tx2, marginBottom: 7, fontWeight: 600 }}>Pinsel <span style={{ fontWeight: 400 }}>· antippen zum Malen · Schicht gedrückt halten und ziehen, um sie zu verschieben</span></div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{paintKeys().map(k => <button key={k} onClick={() => setPaint(k)} style={{ padding: "6px 14px", borderRadius: 8, border: paint === k ? `2px solid ${shX(k)}` : `1px solid ${T.bord2}`, background: shBg(k), color: shC(k), fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{getShiftInfo(k).label}</button>)}</div></div>}
             {curSc && <div style={{ marginTop: 10, padding: "11px 13px", background: arbzg.length ? (arbzgErr ? T.er : T.w) : T.ok, borderRadius: 10, border: `1px solid ${(arbzg.length ? (arbzgErr ? T.erT : T.wT) : T.okT)}33` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 12.5, color: arbzg.length ? (arbzgErr ? T.erT : T.wT) : T.okT }}><Icon n={arbzg.length ? "alert" : "shield"} s={15} />Compliance-Wächter (ArbZG): {arbzg.length ? `${arbzg.length} Hinweis${arbzg.length > 1 ? "e" : ""}${arbzgErr ? ` · davon ${arbzgErr} kritisch` : ""}` : "keine Verstöße erkannt"}</div>
@@ -660,6 +685,26 @@ export default function AdminView() {
                 </label>
               ))}
               <p style={{ fontSize: 10, color: T.tx2, margin: "6px 0 0" }}>Im Modus "Mitarbeiter selbst" erscheint die Verfügbarkeits-Matrix im Profil-Tab jedes Mitarbeiters und wird vom Auto-Planer übernommen.</p>
+            </div>
+            <div style={{ marginTop: 14, padding: "12px 14px", background: T.bg2, borderRadius: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Urlaub & Krankheit: Wer trägt ein?</div>
+              {[["both", "Beides — Mitarbeiter beantragen, Verwaltung kann auch direkt eintragen (Standard)"], ["emp", "Nur Mitarbeiter — ausschließlich über Antrag & Genehmigung"], ["admin", "Nur Verwaltung — Mitarbeiter können keine Anträge stellen"]].map(([v, l]) => (
+                <label key={v} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, cursor: "pointer", fontSize: 12 }}>
+                  <input type="radio" name="absEntryMode" value={v}
+                    checked={(orgEd?.absEntryMode ?? org.absEntryMode ?? "both") === v}
+                    onChange={() => setOrgEd(p => ({ ...(p || { name: org.name, sub: org.sub, weekStdHours: org.weekStdHours || 40 }), absEntryMode: v }))} />
+                  {l}
+                </label>
+              ))}
+              <p style={{ fontSize: 10, color: T.tx2, margin: "6px 0 0" }}>Direkteintragung durch die Verwaltung erscheint sofort im Dienstplan und in der Mitarbeiterakte. Wer eintragen darf, steuert die Berechtigung „Urlaub/Krankheit direkt eintragen" unten.</p>
+            </div>
+            <div style={{ marginTop: 14, padding: "12px 14px", background: T.bg2, borderRadius: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Neuverteilung bei Ausfall</div>
+              <label style={lbl}>Vorlauf in Tagen</label>
+              <input style={{ ...inp, maxWidth: 120 }} type="number" min={0} max={14}
+                value={orgEd?.regenLeadDays ?? org.regenLeadDays ?? 2}
+                onChange={e => setOrgEd(p => ({ ...(p || { name: org.name, sub: org.sub, weekStdHours: org.weekStdHours || 40 }), regenLeadDays: Math.max(0, Math.min(14, Number(e.target.value) || 0)) }))} />
+              <p style={{ fontSize: 10, color: T.tx2, margin: "4px 0 0" }}>Beispiel: Bei Vorlauf 3 und Krankheit ab dem 15. schlägt der Planer vor, ab dem 12. neu zu verteilen. Vergangene Tage werden nie verändert.</p>
             </div>
             {orgEd && <button style={{ ...btn("p"), marginTop: 14 }} onClick={saveOrgEdits}><Icon n="check" s={15} />Speichern</button>}
             <label style={lbl}>Akzentfarbe</label>

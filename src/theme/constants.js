@@ -59,6 +59,7 @@ export const PERMS = {
   approveSick:  "Krankmeldungen entscheiden",
   approveSwap:  "Schichttausch entscheiden",
   manageStaff:  "Mitarbeiter anlegen/bearbeiten",
+  absEntry:     "Urlaub/Krankheit direkt eintragen",
   resetPins:    "PINs zurücksetzen",
   manageShifts: "Schichtmodelle ändern",
   manageOrg:    "Betriebseinstellungen ändern",
@@ -66,8 +67,8 @@ export const PERMS = {
 
 export const DEFAULT_PERMS = {
   owner:    Object.fromEntries(Object.keys(PERMS).map(k => [k, true])),
-  director: { createPlan: true, approveVac: true, approveSick: true, approveSwap: true, manageStaff: true, resetPins: true, manageShifts: false, manageOrg: false },
-  manager:  { createPlan: true, approveVac: false, approveSick: true, approveSwap: true, manageStaff: false, resetPins: false, manageShifts: false, manageOrg: false },
+  director: { createPlan: true, approveVac: true, approveSick: true, approveSwap: true, manageStaff: true, absEntry: true, resetPins: true, manageShifts: false, manageOrg: false },
+  manager:  { createPlan: true, approveVac: false, approveSick: true, approveSwap: true, manageStaff: false, absEntry: false, resetPins: false, manageShifts: false, manageOrg: false },
   staff:    Object.fromEntries(Object.keys(PERMS).map(k => [k, false])),
 };
 

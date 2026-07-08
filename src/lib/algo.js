@@ -30,10 +30,21 @@ export function canWork(sc, id, d, sh, shiftDefs) {
 }
 
 // ArbZG-konformer Auto-Planer. Pure function — kein Seiteneffekt, unit-testbar.
-export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
+// opts.baseSc + opts.fromDay (1-basiert): Teilregenerierung — Tage vor fromDay
+// bleiben fixiert (zählen für Stundenkonten mit), ab fromDay wird neu verteilt.
+export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) {
   const days = dim(y, mo);
+  const fromIdx = opts.fromDay ? Math.max(0, Math.min(days, opts.fromDay - 1)) : 0;
   const sc = {};
-  emps.forEach(e => sc[e.id] = Array(days).fill("-"));
+  if (opts.baseSc && fromIdx > 0) {
+    // Fixierte Tage aus dem bestehenden Plan übernehmen, ab fromIdx leeren (U/K bleibt)
+    emps.forEach(e => {
+      const base = opts.baseSc[e.id] || Array(days).fill("-");
+      sc[e.id] = base.map((s, i) => (i < fromIdx || s === "U" || s === "K") ? s : "-");
+    });
+  } else {
+    emps.forEach(e => sc[e.id] = Array(days).fill("-"));
+  }
   emps.forEach(e => { (absM[e.id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= days) sc[e.id][day - 1] = type; }); });
   const ws = {}; emps.forEach(e => ws[e.id] = new Set((wm[e.id] || []).map(d => d - 1)));
   const monthlyTargetHours = {};
@@ -43,6 +54,21 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
   const shiftCounts = {}; emps.forEach(e => shiftCounts[e.id] = {});
   // Max. Arbeitstage pro Woche: Zähler je Mitarbeiter je Kalender-Woche (0-basiert im Monat)
   const weekDayCount = {}; emps.forEach(e => weekDayCount[e.id] = {});
+  // Fixierte Tage in die Konten einrechnen, damit der Stunden-Deckel weiter gilt
+  if (fromIdx > 0) {
+    emps.forEach(e => {
+      for (let i = 0; i < fromIdx; i++) {
+        const k = sc[e.id][i];
+        const def = shiftDefs.find(x => x.key === k);
+        if (!def) continue;
+        workedHours[e.id] += hoursOf(def.start, def.end);
+        shiftCounts[e.id][k] = (shiftCounts[e.id][k] || 0) + 1;
+        const dt = new Date(y, mo - 1, i + 1);
+        const wn = Math.floor((dt.getTime() - new Date(1970, 0, 5).getTime()) / 86400000 / 7);
+        weekDayCount[e.id][wn] = (weekDayCount[e.id][wn] || 0) + 1;
+      }
+    });
+  }
 
   // Nicht-Nacht- und Nacht-Schichten trennen für rotierende Tagesreihenfolge
   const nonNightDefs = shiftDefs.filter(s => !isNightShift(s));
@@ -68,7 +94,7 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours) {
     return 15;
   };
 
-  for (let d = 0; d < days; d++) {
+  for (let d = fromIdx; d < days; d++) {
     // Rotierende Schichtreihenfolge: Nicht-Nacht-Schichten täglich rotieren,
     // damit FS-Mitarbeiter nicht systematisch immer zuerst in Früh landen.
     // Nachtschichten immer zuletzt (ArbZG-Ruhezeit-Logik unverändert).

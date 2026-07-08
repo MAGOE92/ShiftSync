@@ -24,6 +24,10 @@ export default function EmpView() {
   // Wunschfrei-Tage aus gespeicherten Daten laden, sobald der Tab geöffnet wird
   useEffect(() => { if (rqTab === "wish") loadWishes(wishMonth); }, [rqTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Modus "Nur Verwaltung": Urlaub/Krank nicht wählbar — auf Schichttausch umstellen
+  const adminAbsOnly = (org?.absEntryMode ?? "both") === "admin";
+  useEffect(() => { if (adminAbsOnly && rqForm.type !== "swap") setRqForm(p => ({ ...p, type: "swap" })); }, [adminAbsOnly, rqForm.type]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const MonthNav = ({ value, onChange, min }) => {
     const { y, m0 } = pm(value);
@@ -218,7 +222,8 @@ export default function EmpView() {
 
           {rqTab === "new" && <div style={crd}>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Anfrage stellen</h3>
-            <label style={lbl}>Art</label><select style={inp} value={rqForm.type} onChange={e => setRqForm(p => ({ ...p, type: e.target.value }))}><option value="vac">Urlaubsantrag</option><option value="sick">Krankmeldung</option><option value="swap">Schichttausch</option></select>
+            {(org.absEntryMode ?? "both") === "admin" && <div style={{ padding: "10px 13px", background: T.bg2, borderRadius: 10, fontSize: 12, color: T.tx2, marginBottom: 10 }}>Urlaub und Krankmeldungen trägt in diesem Betrieb die Verwaltung ein — bitte melde dich direkt bei deiner Führungskraft. Schichttausch kannst du weiterhin selbst beantragen.</div>}
+            <label style={lbl}>Art</label><select style={inp} value={rqForm.type} onChange={e => setRqForm(p => ({ ...p, type: e.target.value }))}>{(org.absEntryMode ?? "both") !== "admin" && <><option value="vac">Urlaubsantrag</option><option value="sick">Krankmeldung</option></>}<option value="swap">Schichttausch</option></select>
             {rqForm.type === "sick" && <><label style={lbl}>Von</label><input style={inp} type="date" value={rqForm.fromDate} onChange={e => setRqForm(p => ({ ...p, fromDate: e.target.value }))} /><label style={lbl}>Bis (optional)</label><input style={inp} type="date" value={rqForm.toDate} onChange={e => setRqForm(p => ({ ...p, toDate: e.target.value }))} /></>}
             {rqForm.type === "vac" && (() => {
               const datesBetween = (from, to) => { const a = []; for (let d = new Date(from + "T12:00:00"); d <= new Date(to + "T12:00:00"); d.setDate(d.getDate() + 1)) a.push(d.toISOString().slice(0, 10)); return a; };
