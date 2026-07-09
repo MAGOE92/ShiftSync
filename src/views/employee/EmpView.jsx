@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { useApp } from "../../App.jsx";
 import { Icon } from "../../theme/icons.jsx";
 
@@ -414,13 +414,13 @@ export default function EmpView() {
                     <div />
                     {DOW_LABELS.map(l => <div key={l} style={{ fontSize: 10, fontWeight: 700, color: T.tx2, textAlign: "center" }}>{l}</div>)}
                     {shiftDefs.map(s => (
-                      <>{/* eslint-disable-next-line react/jsx-key */}
+                      <Fragment key={s.key}>
                         <div style={{ fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", paddingRight: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
                         {DOW_ORDER.map(dow => {
                           const ok = isAvail(dow, s.key);
                           return <button key={dow} onClick={() => toggleAvail(dow, s.key)} style={{ padding: "5px 2px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, textAlign: "center", background: ok ? shBg(s.key) : T.bg3, color: ok ? shC(s.key) : T.tx2, opacity: ok ? 1 : 0.5 }}>{ok ? s.key : "–"}</button>;
                         })}
-                      </>
+                      </Fragment>
                     ))}
                   </div>
                 </div>
