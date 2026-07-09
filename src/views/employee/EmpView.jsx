@@ -355,6 +355,28 @@ export default function EmpView() {
                 <div style={{ fontSize: 12, color: ROLES[me.role || "staff"].col, fontWeight: 700 }}>{ROLES[me.role || "staff"].l}</div>
               </div>
             </div>
+            {(() => {
+              // Urlaubskonto: gleiche Rechnung wie in der Mitarbeiterakte
+              const year = today.getFullYear();
+              const annual = Number(me.vacDays ?? 24), carry = Number(me.vacCarry ?? 0);
+              const used = reqList.filter(r => r.uid === me.id && r.type === "vac" && r.status === "ok")
+                .reduce((s, r) => s + (r.dates || []).filter(ds => ds.startsWith(String(year))).length, 0);
+              const sick = reqList.filter(r => r.uid === me.id && r.type === "sick" && r.status === "ok")
+                .reduce((s, r) => s + (r.dates || (r.fromDate ? [r.fromDate] : [])).filter(ds => ds.startsWith(String(year))).length, 0);
+              const left = annual + carry - used;
+              return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginBottom: 13 }}>
+                <div style={{ padding: "11px 13px", background: T.ok, borderRadius: 11 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: T.okT, opacity: .8 }}>Resturlaub {year}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: T.okT, fontFamily: "'Schibsted Grotesk',sans-serif" }}>{left} Tage</div>
+                  <div style={{ fontSize: 10.5, color: T.okT, opacity: .75 }}>{used} von {annual + carry} genommen{carry > 0 ? ` (inkl. ${carry} Übertrag)` : ""}</div>
+                </div>
+                <div style={{ padding: "11px 13px", background: T.bg2, borderRadius: 11 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: T.tx2 }}>Kranktage {year}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: T.tx, fontFamily: "'Schibsted Grotesk',sans-serif" }}>{sick}</div>
+                  <div style={{ fontSize: 10.5, color: T.tx2 }}>gemeldet & bestätigt</div>
+                </div>
+              </div>;
+            })()}
             <label style={lbl}>Bevorzugte Schicht</label>
             <select style={inp} value={me.pref || "any"} onChange={e => savePref(e.target.value)}>
               {PR.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}

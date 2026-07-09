@@ -23,7 +23,7 @@ export default function AdminView() {
     flash, clockData,
     seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
-    refreshData, exportPayroll, handleReq, saveOrgEdits, addAbsence, regenGaps, setAccent, setTimeclock, saveShift, delShift,
+    refreshData, exportPayroll, handleReq, saveOrgEdits, addAbsence, regenGaps, copyPrevPattern, announce, setAccent, setTimeclock, saveShift, delShift,
     addHoliday, delHoliday, setPerm, printPlan, exportCSV,
     setOrgStatus, setOrgPlan, setIsSuper, setWasSuper, setOrgId, setData, setMe, setView,
     startCheckout, logout,
@@ -36,6 +36,8 @@ export default function AdminView() {
   const [hrTab, setHrTab] = useState("overview");
   const [hrEf, setHrEf] = useState({});
   const [absForm, setAbsForm] = useState({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" });
+  const [absCalMo, setAbsCalMo] = useState(null); // Monat des Abwesenheitskalenders (null = aktueller)
+  const [annText, setAnnText] = useState("");
 
   const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const MonthNav = ({ value, onChange }) => {
@@ -364,6 +366,14 @@ export default function AdminView() {
             </div>
           </div>}
           {emps.length <= 1 && <div style={{ ...crd, marginBottom: 14, background: T.bl, borderColor: T.blT + "40" }}><h3 style={{ margin: "0 0 8px", fontSize: 14, color: T.blT }}>Startklar · Betriebs-ID: <span style={{ fontFamily: "ui-monospace,monospace" }}>{org.code}</span></h3><p style={{ margin: "0 0 12px", fontSize: 13, color: T.blT }}>Mit dieser Betriebs-ID melden sich deine Mitarbeiter an.</p><button style={btn("p")} onClick={seedDemo}>Demo-Team laden</button></div>}
+          {canManage && emps.length > 1 && <div style={{ ...crd, marginBottom: 14 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700 }}>Ankündigung an das Team</h3>
+            <p style={{ margin: "0 0 10px", fontSize: 11, color: T.tx2 }}>Erscheint bei allen Mitarbeitern als Benachrichtigung (Glocke).</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input style={{ ...inp, flex: 1, minWidth: 200, marginBottom: 0 }} placeholder="z. B. Inventur am Freitag — bitte 15 Min früher kommen" value={annText} onChange={e => setAnnText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") announce(annText).then(ok => ok && setAnnText("")); }} />
+              <button style={btn("p")} onClick={() => announce(annText).then(ok => ok && setAnnText(""))}><Icon n="bell" s={15} />Senden</button>
+            </div>
+          </div>}
           {/* ── HEUTE (Hero) ─────────────────────────────── */}
           <div style={{ ...crd, marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -541,6 +551,40 @@ export default function AdminView() {
             <input style={inp} value={absForm.note} placeholder="z. B. telefonisch krankgemeldet" onChange={e => setAbsForm(p => ({ ...p, note: e.target.value }))} />
             <button style={{ ...btn("p"), marginTop: 12 }} onClick={async () => { const ok = await addAbsence(absForm); if (ok) setAbsForm({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" }); }}><Icon n="check" s={15} />Eintragen</button>
           </div>}
+          {(() => {
+            // Abwesenheitskalender: wer fehlt wann (genehmigte Urlaube/Krankmeldungen)
+            const calMo = absCalMo || cm;
+            const { y: cy2, m0: cm2, days: calDays, lbl: calLbl } = pm(calMo);
+            const byEmp = {};
+            reqs.filter(r => r.status === "ok" && (r.type === "vac" || r.type === "sick")).forEach(r => {
+              const ds = r.dates || (r.fromDate ? (() => { const a = []; for (let d = new Date(r.fromDate + "T12:00:00"), e = new Date((r.toDate || r.fromDate) + "T12:00:00"); d <= e; d.setDate(d.getDate() + 1)) a.push(d.toISOString().slice(0, 10)); return a; })() : []);
+              ds.forEach(s => { if (s.startsWith(calMo)) { const day = Number(s.slice(8, 10)); if (!byEmp[r.uid]) byEmp[r.uid] = {}; byEmp[r.uid][day] = r.type === "vac" ? "U" : "K"; } });
+            });
+            const absEmps = emps.filter(e => byEmp[e.id]);
+            return <div style={{ ...crd, marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Abwesenheitskalender</h3>
+                <div style={{ marginLeft: "auto" }}><MonthNav value={calMo} onChange={setAbsCalMo} /></div>
+              </div>
+              {!absEmps.length && <p style={{ margin: 0, fontSize: 12, color: T.tx2 }}>Keine genehmigten Abwesenheiten im {calLbl}.</p>}
+              {absEmps.length > 0 && <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", fontSize: 10 }}>
+                  <thead><tr>
+                    <th style={{ padding: "5px 10px", textAlign: "left", fontSize: 11, color: T.tx2, fontWeight: 600, minWidth: 110 }}>Mitarbeiter</th>
+                    {Array.from({ length: calDays }, (_, i) => { const dow = new Date(cy2, cm2, i + 1).getDay(); const we = dow === 0 || dow === 6; return <th key={i} style={{ padding: "2px 0", minWidth: 20, textAlign: "center", fontWeight: we ? 700 : 400, color: we ? T.tx : T.tx2 }}>{i + 1}</th>; })}
+                    <th style={{ padding: "5px 8px", fontSize: 10, color: T.tx2 }}>Σ</th>
+                  </tr></thead>
+                  <tbody>{absEmps.map(e => { const row = byEmp[e.id]; const tot = Object.keys(row).length; return (
+                    <tr key={e.id}>
+                      <td style={{ padding: "3px 10px", fontWeight: 600, fontSize: 11, whiteSpace: "nowrap" }}>{e.name}</td>
+                      {Array.from({ length: calDays }, (_, i) => { const t = row[i + 1]; return <td key={i} style={{ padding: 1, textAlign: "center" }}>{t ? <span style={{ display: "inline-block", width: 18, height: 16, lineHeight: "16px", borderRadius: 4, fontSize: 8.5, fontWeight: 700, background: t === "U" ? "#fef3c7" : "#fee2e2", color: t === "U" ? "#92400e" : "#b91c1c" }}>{t}</span> : null}</td>; })}
+                      <td style={{ padding: "3px 8px", fontWeight: 700, fontSize: 11, textAlign: "center" }}>{tot}</td>
+                    </tr>
+                  ); })}</tbody>
+                </table>
+              </div>}
+            </div>;
+          })()}
           <div style={crd}>
             <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>{reqFilter === "pending" ? "Offene Anfragen" : reqFilter === "ok" ? "Genehmigt" : reqFilter === "no" ? "Abgelehnt" : "Archiv"}</h3>
             {!filteredReqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "24px 0", margin: 0, fontSize: 13 }}>Keine Einträge.</p>}
@@ -572,6 +616,7 @@ export default function AdminView() {
               {planView !== "month" && <input type="date" value={planDate} onChange={e => setPlanDate(e.target.value)} style={{ ...inp, width: "auto" }} />}
               {can("createPlan") && <button style={{ ...btn(genLoad ? "s" : "p"), minWidth: 170 }} onClick={generate} disabled={genLoad}>{genLoad ? "Rechne…" : <><Icon n="sparkle" s={15} />Automatisch erstellen</>}</button>}
               {can("createPlan") && !baseSc && <button style={btn("bl")} onClick={createEmptyPlan}><Icon n="pencil" s={15} />Leer & selbst erstellen</button>}
+              {can("createPlan") && !baseSc && (() => { const { y: py, m0: pmn } = pm(planMo); const pd = new Date(py, pmn - 1, 1); const prevKey = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`; return scheds[prevKey] ? <button style={btn("s")} onClick={copyPrevPattern}><Icon n="repeat" s={15} />Muster aus Vormonat</button> : null; })()}
               {baseSc && !editMode && can("createPlan") && <button style={btn("w")} onClick={() => { const d = JSON.parse(JSON.stringify(scheds[planMo])); nonPlanEmps.forEach(e => { if (!d[e.id]) d[e.id] = Array(days).fill("-"); }); setDraft(d); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); }}><Icon n="pencil" s={15} />Bearbeiten</button>}
               {editMode && <><button style={btn("ok")} onClick={publishDraft}><Icon n="check" s={15} />Veröffentlichen</button><button style={btn("s")} onClick={() => { setEditMode(false); setDraft(null); }}>Abbrechen</button></>}
               {baseSc && !editMode && <><button style={btn("s")} onClick={printPlan}><Icon n="printer" s={15} />Drucken</button><button style={btn("s")} onClick={exportCSV}><Icon n="download" s={15} />CSV</button>{orgPlan.exportF && <button style={btn("bl")} onClick={exportPayroll}><Icon n="download" s={15} />Lohn-Export</button>}</>}

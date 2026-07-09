@@ -343,6 +343,48 @@ export default function App() {
     return true;
   };
 
+  // Wochenmuster aus dem Vormonat übernehmen: erste volle Mo–So-Woche des
+  // Vormonats als Muster über den neuen Monat kacheln. Genehmigte Abwesenheit
+  // überschreibt das Muster. Ergebnis als Entwurf — prüfen, dann veröffentlichen.
+  const copyPrevPattern = async () => {
+    const { y, m0, days, lbl } = pm(planMo);
+    const prev = new Date(y, m0 - 1, 1);
+    const prevMo = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+    const prevSc = scheds[prevMo];
+    if (!prevSc) { flash("er", "Kein Plan im Vormonat vorhanden"); return; }
+    if (scheds[planMo] && !confirm(`Für ${lbl} existiert bereits ein Plan. Mit Vormonats-Muster überschreiben?`)) return;
+    // Ersten Montag des Vormonats finden, ab dem 7 Tage im Monat liegen
+    const prevDays = new Date(prev.getFullYear(), prev.getMonth() + 1, 0).getDate();
+    let monIdx = -1;
+    for (let i = 0; i < prevDays - 6; i++) { if (new Date(prev.getFullYear(), prev.getMonth(), i + 1).getDay() === 1) { monIdx = i; break; } }
+    if (monIdx < 0) { flash("er", "Vormonat hat keine volle Woche"); return; }
+    const absM = absMap();
+    const sc = {};
+    emps.forEach(e => {
+      const src = prevSc[e.id] || Array(prevDays).fill("-");
+      // Muster Mo..So (Index 0..6), nur echte Schichten übernehmen (kein U/K)
+      const pattern = Array.from({ length: 7 }, (_, i) => { const k = src[monIdx + i]; return shiftDefs.some(s => s.key === k) ? k : "-"; });
+      const row = Array.from({ length: days }, (_, d) => {
+        const dow = new Date(y, m0, d + 1).getDay(); // So=0
+        return pattern[(dow + 6) % 7]; // auf Mo=0 drehen
+      });
+      (absM[e.id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= days) row[day - 1] = type; });
+      sc[e.id] = row;
+    });
+    setDraft(sc); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); setATab("sched");
+    flash("ok", `Wochenmuster aus ${prevMo} übernommen — bitte prüfen und veröffentlichen`);
+  };
+
+  // Ankündigung an das gesamte Team (läuft über das Benachrichtigungssystem)
+  const announce = async text => {
+    const t = (text || "").trim();
+    if (!t) { flash("er", "Text eingeben"); return false; }
+    const nt = buildNotifs(emps.filter(e => e.id !== me.id).map(e => ({ uid: e.id, type: "info", text: `Ankündigung von ${me.name}: ${t}`})));
+    await saveData({ ...data, notifs: [...allNotifs, ...nt] });
+    flash("ok", `Ankündigung an ${nt.length} Mitarbeiter gesendet ✓`);
+    return true;
+  };
+
   // Teilneuverteilung: bestehenden Plan ab Tag X neu verteilen (Tage davor bleiben fix).
   // Ergebnis landet als Entwurf im Bearbeitungsmodus — prüfen, dann veröffentlichen.
   const regenGaps = async fromDay => {
@@ -475,7 +517,7 @@ export default function App() {
     seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
     absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
     doClock, istHoursMonth, exportPayroll, offerShift, withdrawOffer, takeShift,
-    handleReq, saveOrgEdits, addAbsence, regenGaps, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
+    handleReq, saveOrgEdits, addAbsence, regenGaps, copyPrevPattern, announce, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
     setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac,
     buildNotifs, markAllRead, markNotifRead, clearMyNotifs,
     setOrgStatus, setOrgPlan, startCheckout,
