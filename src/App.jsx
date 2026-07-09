@@ -53,7 +53,7 @@ export default function App() {
   const [nef, setNef] = useState({ name: "", lid: "", pin: "", pref: "any", role: "staff", workPct: 100, inPlan: true });
   const [dragSh, setDragSh] = useState(null);
   const [showNotifs, setShowNotifs] = useState(false);
-  const [planMo, setPlanMo] = useState(nms); const [genLoad, setGenLoad] = useState(false); const [genAsk, setGenAsk] = useState(false);
+  const [planMo, setPlanMo] = useState(nms); const [genLoad, setGenLoad] = useState(false); const [genAsk, setGenAsk] = useState(false); const [regenAsk, setRegenAsk] = useState(null);
   const [editMode, setEditMode] = useState(false); const [draft, setDraft] = useState(null); const [paint, setPaint] = useState("");
   const [wishMonth, setWishMonth] = useState(nms); const [wsel, setWsel] = useState([]); const [wishNote, setWishNote] = useState("");
   const [rqForm, setRqForm] = useState({ type: "vac", dates: [], note: "", toId: "", toDate: "", fromDate: "", vacMonth: "" });
@@ -411,20 +411,27 @@ export default function App() {
 
   // Teilneuverteilung: bestehenden Plan ab Tag X neu verteilen (Tage davor bleiben fix).
   // Ergebnis landet als Entwurf im Bearbeitungsmodus — prüfen, dann veröffentlichen.
-  const regenGaps = async fromDay => {
+  // mode: undefined = Auswahl-Dialog öffnen · "fill" = nur die Lücken auffüllen
+  // (alle vorhandenen Schichten, auch nach fromDay, bleiben stehen) · "overwrite" =
+  // ab fromDay komplett neu verteilen (Tage davor bleiben immer fix).
+  const regenGaps = async (fromDay, mode) => {
     if (!canAuto) { flash("er", "Automatische Planung ist ab Tarif Pro verfügbar"); return; }
     const base = scheds[planMo]; if (!base) { flash("er", "Kein Plan vorhanden"); return; }
     const planEmps = emps.filter(e => e.inPlan !== false);
     if (planEmps.length < 3) { flash("er", `Mind. 3 Mitarbeiter im Plan (aktuell: ${planEmps.length})`); return; }
     const { y, m0, days, lbl } = pm(planMo);
     const fd = Math.max(1, Math.min(days, fromDay));
+    if (!mode) { setRegenAsk(fd); return; }
+    setRegenAsk(null);
     const wm = {}; planEmps.forEach(e => { const arr = []; Object.entries(wishes).forEach(([k, v]) => { if (k.startsWith(planMo + "-") && k.endsWith(e.id) && v && Array.isArray(v.days)) v.days.forEach(d => arr.push(d)); }); wm[e.id] = arr; });
     const absM = absMap();
     const merged = {}; Object.keys(base).forEach(id => { merged[id] = [...base[id]]; (absM[id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= days) merged[id][day - 1] = type; }); });
-    const sc = algo(planEmps, wm, absM, y, m0, shiftDefs, weekStdHours, { baseSc: merged, fromDay: fd });
+    const opts = mode === "fill" ? { baseSc: merged, keepExisting: true } : { baseSc: merged, fromDay: fd };
+    const sc = algo(planEmps, wm, absM, y, m0, shiftDefs, weekStdHours, opts);
     emps.filter(e => e.inPlan === false).forEach(e => { sc[e.id] = merged[e.id] || Array(days).fill("-"); });
     setDraft(sc); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); setATab("sched");
-    flash("ok", `Plan ab ${fd}. ${lbl} neu verteilt — bitte prüfen und veröffentlichen`);
+    const modeTxt = mode === "fill" ? "Lücken aufgefüllt — restliche Planung unverändert" : `ab ${fd}. neu verteilt`;
+    flash("ok", `Plan ${lbl} ${modeTxt} — bitte prüfen und veröffentlichen`);
   };
   const setAccent = async c => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, accent: c } : o)); flash("ok", "Akzentfarbe übernommen"); };
   const setTimeclock = async v => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, timeclock: v } : o)); flash("ok", "Stempeluhr-Einstellung gespeichert ✓"); };
@@ -520,7 +527,7 @@ export default function App() {
     planView, planDate, empPlanView, filterEmp, filterShift, reqFilter,
     lOrg, lId, lPin, wiz, showOrgs, linkForm, editE, ef, rstE, rstP,
     orgEd, editShift, showHoliday, holidayDate, holidayName, editReq, decNote,
-    nef, dragSh, showNotifs, planMo, genLoad, genAsk, editMode, draft, paint,
+    nef, dragSh, showNotifs, planMo, genLoad, genAsk, regenAsk, editMode, draft, paint,
     wishMonth, wsel, wishNote, rqForm, rqTab, pinCh,
     // Setters
     setDark, setOrgs, setOrgId, setData, setView, setMe, setIsSuper, setWasSuper,
@@ -528,7 +535,7 @@ export default function App() {
     setFilterShift, setReqFilter, setLOrg, setLId, setLPin, setWiz, setShowOrgs,
     setLinkForm, setEditE, setEf, setRstE, setRstP, setOrgEd, setEditShift,
     setShowHoliday, setHolidayDate, setHolidayName, setEditReq, setDecNote,
-    setNef, setDragSh, setShowNotifs, setPlanMo, setGenLoad, setGenAsk, setEditMode,
+    setNef, setDragSh, setShowNotifs, setPlanMo, setGenLoad, setGenAsk, setRegenAsk, setEditMode,
     setDraft, setPaint, setWishMonth, setWsel, setWishNote, setRqForm, setRqTab, setPinCh,
     // Computed
     org, emps, wishes, scheds, reqs: reqList, shiftDefs, weekStdHours, holidays,

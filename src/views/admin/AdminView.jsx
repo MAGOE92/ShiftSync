@@ -14,7 +14,7 @@ export default function AdminView() {
     orgEd, setOrgEd, editShift, setEditShift, editReq, setEditReq, decNote, setDecNote,
     nef, setNef, showOrgs, setShowOrgs, linkForm, setLinkForm,
     holidayDate, setHolidayDate, holidayName, setHolidayName,
-    genLoad, genAsk, setGenAsk, pendCount, today, cm, nm, cy, cm0, market,
+    genLoad, genAsk, setGenAsk, regenAsk, setRegenAsk, pendCount, today, cm, nm, cy, cm0, market,
     orgPlan, orgStatus, seatLimit, seatUsed, seatFull, trialDaysLeft, canAuto,
     can, canManage, isOwner,
     ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, SHIFT_COLORS, ACCENTS, MF, DW, PR,
@@ -199,6 +199,18 @@ export default function AdminView() {
           <button style={btn("p")} onClick={() => generate("fill")}><Icon n="sparkle" s={15} />Nur Lücken füllen — manuelle Schichten bleiben</button>
           <button style={btn("w")} onClick={() => { if (confirm("Wirklich den kompletten Plan verwerfen und neu generieren? Alle manuellen Änderungen gehen verloren.")) generate("overwrite"); }}><Icon n="alert" s={15} />Komplett neu generieren — alles wird überschrieben</button>
           <button style={btn("s")} onClick={() => setGenAsk(false)}>Abbrechen</button>
+        </div>
+      </div></div>}
+      {regenAsk != null && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 420 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Plan an Ausfall anpassen</h3>
+          <button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setRegenAsk(null)}><Icon n="x" s={15} /></button>
+        </div>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: T.tx2 }}>Ab dem {regenAsk}. gibt es Lücken durch Urlaub/Krankheit. Wurden im restlichen Monat schon manuelle Änderungen gemacht (Tausch, Verschiebung)?</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button style={btn("p")} onClick={() => regenGaps(regenAsk, "fill")}><Icon n="sparkle" s={15} />Nur Lücken füllen — Rest bleibt wie geplant</button>
+          <button style={btn("w")} onClick={() => { if (confirm(`Wirklich ab dem ${regenAsk}. alles neu verteilen? Manuelle Änderungen in diesem Zeitraum gehen verloren.`)) regenGaps(regenAsk, "overwrite"); }}><Icon n="alert" s={15} />Ab dem {regenAsk}. komplett neu verteilen</button>
+          <button style={btn("s")} onClick={() => setRegenAsk(null)}>Abbrechen</button>
         </div>
       </div></div>}
       {editReq && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Entscheidung mit Notiz</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setEditReq(null); setDecNote(""); }}><Icon n="x" s={15} /></button></div>
@@ -646,7 +658,7 @@ export default function AdminView() {
               const suggested = futureGaps.length ? Math.max(minDay, futureGaps[0].d + 1 - lead) : null;
               return <div style={{ marginTop: 10, padding: "10px 13px", background: T.er, borderRadius: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: T.erT, fontWeight: 600, flex: 1 }}>{gaps} Tag(e) unterbesetzt.{suggested && canAuto ? ` Vorschlag: ab ${suggested}. neu verteilen (Vorlauf ${lead} Tag(e), frühere Tage bleiben unverändert).` : ""}</span>
-                {suggested && canAuto && can("createPlan") && <button style={btn("er", true)} onClick={() => regenGaps(suggested)}><Icon n="sparkle" s={13} />Ab {suggested}. neu verteilen</button>}
+                {suggested && canAuto && can("createPlan") && <button style={btn("er", true)} onClick={() => regenGaps(suggested)}><Icon n="sparkle" s={13} />Plan anpassen (ab {suggested}.)</button>}
               </div>;
             })()}
             {editMode && <div style={{ marginTop: 10, padding: "10px 13px", background: T.bg2, borderRadius: 10 }}><div style={{ fontSize: 12, color: T.tx2, marginBottom: 7, fontWeight: 600 }}>Pinsel <span style={{ fontWeight: 400 }}>· antippen zum Malen · Schicht gedrückt halten und ziehen, um sie zu verschieben</span></div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{paintKeys().map(k => <button key={k} onClick={() => setPaint(k)} style={{ padding: "6px 14px", borderRadius: 8, border: paint === k ? `2px solid ${shX(k)}` : `1px solid ${T.bord2}`, background: shBg(k), color: shC(k), fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{getShiftInfo(k).label}</button>)}</div></div>}
