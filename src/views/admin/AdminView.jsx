@@ -14,7 +14,7 @@ export default function AdminView() {
     orgEd, setOrgEd, editShift, setEditShift, editReq, setEditReq, decNote, setDecNote,
     nef, setNef, showOrgs, setShowOrgs, linkForm, setLinkForm,
     holidayDate, setHolidayDate, holidayName, setHolidayName,
-    genLoad, pendCount, today, cm, nm, cy, cm0, market,
+    genLoad, genAsk, setGenAsk, pendCount, today, cm, nm, cy, cm0, market,
     orgPlan, orgStatus, seatLimit, seatUsed, seatFull, trialDaysLeft, canAuto,
     can, canManage, isOwner,
     ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, SHIFT_COLORS, ACCENTS, MF, DW, PR,
@@ -189,6 +189,18 @@ export default function AdminView() {
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => setEditShift(null)}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={saveShift}>Speichern</button></div>
       </div></div>}
 
+      {genAsk && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 420 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Plan existiert bereits</h3>
+          <button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setGenAsk(false)}><Icon n="x" s={15} /></button>
+        </div>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: T.tx2 }}>Für diesen Monat wurde schon geplant — eventuell mit manuellen Änderungen. Wie soll der Auto-Planer vorgehen?</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button style={btn("p")} onClick={() => generate("fill")}><Icon n="sparkle" s={15} />Nur Lücken füllen — manuelle Schichten bleiben</button>
+          <button style={btn("w")} onClick={() => { if (confirm("Wirklich den kompletten Plan verwerfen und neu generieren? Alle manuellen Änderungen gehen verloren.")) generate("overwrite"); }}><Icon n="alert" s={15} />Komplett neu generieren — alles wird überschrieben</button>
+          <button style={btn("s")} onClick={() => setGenAsk(false)}>Abbrechen</button>
+        </div>
+      </div></div>}
       {editReq && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 400 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Entscheidung mit Notiz</h3><button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => { setEditReq(null); setDecNote(""); }}><Icon n="x" s={15} /></button></div>
         <p style={{ fontSize: 12, color: T.tx2, margin: "0 0 8px" }}>Anfrage von <strong>{emps.find(e => e.id === editReq.req.uid)?.name}</strong></p>
         <label style={lbl}>Notiz (optional, für den Mitarbeiter sichtbar)</label>
@@ -614,7 +626,7 @@ export default function AdminView() {
               <MonthNav value={planMo} onChange={v => { setPlanMo(v); setEditMode(false); setDraft(null); }} />
               <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: `1px solid ${T.bord2}` }}>{[["day", "Tag"], ["week", "Woche"], ["month", "Monat"]].map(([k, l]) => <button key={k} onClick={() => setPlanView(k)} style={{ padding: "9px 14px", border: "none", background: planView === k ? T.invBg : T.bg, color: planView === k ? T.inv : T.tx, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{l}</button>)}</div>
               {planView !== "month" && <input type="date" value={planDate} onChange={e => setPlanDate(e.target.value)} style={{ ...inp, width: "auto" }} />}
-              {can("createPlan") && <button style={{ ...btn(genLoad ? "s" : "p"), minWidth: 170 }} onClick={generate} disabled={genLoad}>{genLoad ? "Rechne…" : <><Icon n="sparkle" s={15} />Automatisch erstellen</>}</button>}
+              {can("createPlan") && <button style={{ ...btn(genLoad ? "s" : "p"), minWidth: 170 }} onClick={() => generate()} disabled={genLoad}>{genLoad ? "Rechne…" : <><Icon n="sparkle" s={15} />Automatisch erstellen</>}</button>}
               {can("createPlan") && !baseSc && <button style={btn("bl")} onClick={createEmptyPlan}><Icon n="pencil" s={15} />Leer & selbst erstellen</button>}
               {can("createPlan") && !baseSc && (() => { const { y: py, m0: pmn } = pm(planMo); const pd = new Date(py, pmn - 1, 1); const prevKey = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`; return scheds[prevKey] ? <button style={btn("s")} onClick={copyPrevPattern}><Icon n="repeat" s={15} />Muster aus Vormonat</button> : null; })()}
               {baseSc && !editMode && can("createPlan") && <button style={btn("w")} onClick={() => { const d = JSON.parse(JSON.stringify(scheds[planMo])); nonPlanEmps.forEach(e => { if (!d[e.id]) d[e.id] = Array(days).fill("-"); }); setDraft(d); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); }}><Icon n="pencil" s={15} />Bearbeiten</button>}

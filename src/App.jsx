@@ -53,7 +53,7 @@ export default function App() {
   const [nef, setNef] = useState({ name: "", lid: "", pin: "", pref: "any", role: "staff", workPct: 100, inPlan: true });
   const [dragSh, setDragSh] = useState(null);
   const [showNotifs, setShowNotifs] = useState(false);
-  const [planMo, setPlanMo] = useState(nms); const [genLoad, setGenLoad] = useState(false);
+  const [planMo, setPlanMo] = useState(nms); const [genLoad, setGenLoad] = useState(false); const [genAsk, setGenAsk] = useState(false);
   const [editMode, setEditMode] = useState(false); const [draft, setDraft] = useState(null); const [paint, setPaint] = useState("");
   const [wishMonth, setWishMonth] = useState(nms); const [wsel, setWsel] = useState([]); const [wishNote, setWishNote] = useState("");
   const [rqForm, setRqForm] = useState({ type: "vac", dates: [], note: "", toId: "", toDate: "", fromDate: "", vacMonth: "" });
@@ -290,7 +290,31 @@ export default function App() {
 
   const createEmptyPlan = async () => { const { y, m0, days, lbl } = pm(planMo); const planEmps = emps.filter(e => e.inPlan !== false); if (!planEmps.length) { flash("er", "Keine Mitarbeiter im Plan"); return; } const absM = absMap(); const sc = {}; emps.forEach(e => { const row = Array(days).fill("-"); (absM[e.id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= days) row[day - 1] = type; }); sc[e.id] = row; }); await saveData({ ...data, scheds: { ...scheds, [planMo]: sc } }); setDraft(JSON.parse(JSON.stringify(sc))); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); setATab("sched"); flash("ok", `Leerer Plan für ${lbl} angelegt · genehmigter Urlaub bereits eingetragen`); };
 
-  const generate = async () => { if (!canAuto) { flash("er", "Automatische Planung ist ab Tarif Pro verfügbar"); return; } const planEmps = emps.filter(e => e.inPlan !== false); if (planEmps.length < 3) { flash("er", `Mind. 3 Mitarbeiter im Plan (aktuell: ${planEmps.length})`); return; } const { lbl: exLbl } = pm(planMo); if (scheds[planMo] && !confirm(`Für ${exLbl} existiert bereits ein Plan. Neu generieren und überschreiben?`)) return; setGenLoad(true); const { y, m0, lbl } = pm(planMo); const wm = {}; planEmps.forEach(e => { const arr = []; Object.entries(wishes).forEach(([k, v]) => { if (k.startsWith(planMo + "-") && k.endsWith(e.id) && v && Array.isArray(v.days)) v.days.forEach(d => arr.push(d)); }); wm[e.id] = arr; }); const absM = absMap(); const sc = algo(planEmps, wm, absM, y, m0, shiftDefs, weekStdHours); const dd = new Date(y, m0 + 1, 0).getDate(); emps.filter(e => e.inPlan === false).forEach(e => { sc[e.id] = scheds[planMo]?.[e.id] || Array(dd).fill("-"); }); let missing = 0; for (let d = 0; d < dd; d++) shiftDefs.forEach(s => { const c = planEmps.filter(e => (sc[e.id] || [])[d] === s.key).length; if (c < s.required) missing += s.required - c; }); await saveData({ ...data, scheds: { ...scheds, [planMo]: sc } }); setGenLoad(false); setEditMode(false); setDraft(null); setATab("sched"); missing > 0 ? flash("w", `Plan ${lbl} erstellt · ${missing} Schicht(en) unbesetzt – Stundenkontingente ausgeschöpft (rote Felder prüfen)`) : flash("ok", `Plan ${lbl} automatisch erstellt · ${planEmps.length} MA · Stundenkonten eingehalten`); };
+  // mode: undefined = Auswahl-Dialog wenn Plan existiert · "fill" = nur Lücken
+  // füllen (manuelle Schichten bleiben) · "overwrite" = komplett neu generieren
+  const generate = async mode => {
+    if (!canAuto) { flash("er", "Automatische Planung ist ab Tarif Pro verfügbar"); return; }
+    const planEmps = emps.filter(e => e.inPlan !== false);
+    if (planEmps.length < 3) { flash("er", `Mind. 3 Mitarbeiter im Plan (aktuell: ${planEmps.length})`); return; }
+    if (scheds[planMo] && !mode) { setGenAsk(true); return; }
+    setGenAsk(false); setGenLoad(true);
+    const { y, m0, days: dd, lbl } = pm(planMo);
+    const wm = {}; planEmps.forEach(e => { const arr = []; Object.entries(wishes).forEach(([k, v]) => { if (k.startsWith(planMo + "-") && k.endsWith(e.id) && v && Array.isArray(v.days)) v.days.forEach(d => arr.push(d)); }); wm[e.id] = arr; });
+    const absM = absMap();
+    let opts = {};
+    if (mode === "fill" && scheds[planMo]) {
+      const base = scheds[planMo];
+      const merged = {}; emps.forEach(e => { merged[e.id] = [...(base[e.id] || Array(dd).fill("-"))]; (absM[e.id] || []).forEach(({ day, type }) => { if (day >= 1 && day <= dd) merged[e.id][day - 1] = type; }); });
+      opts = { baseSc: merged, keepExisting: true };
+    }
+    const sc = algo(planEmps, wm, absM, y, m0, shiftDefs, weekStdHours, opts);
+    emps.filter(e => e.inPlan === false).forEach(e => { if (!sc[e.id]) sc[e.id] = scheds[planMo]?.[e.id] || Array(dd).fill("-"); });
+    let missing = 0; for (let d = 0; d < dd; d++) shiftDefs.forEach(s => { const c = planEmps.filter(e => (sc[e.id] || [])[d] === s.key).length; if (c < s.required) missing += s.required - c; });
+    await saveData({ ...data, scheds: { ...scheds, [planMo]: sc } });
+    setGenLoad(false); setEditMode(false); setDraft(null); setATab("sched");
+    const modeTxt = mode === "fill" ? " · manuelle Schichten unverändert" : "";
+    missing > 0 ? flash("w", `Plan ${lbl} erstellt${modeTxt} · ${missing} Schicht(en) unbesetzt – Stundenkontingente ausgeschöpft (rote Felder prüfen)`) : flash("ok", `Plan ${lbl} ${mode === "fill" ? "aufgefüllt" : "automatisch erstellt"}${modeTxt} · ${planEmps.length} MA · Stundenkonten eingehalten`);
+  };
 
   const paintKeys = () => [...shiftDefs.map(s => s.key), "U", "K", "-"];
   const paintCell = (id, d) => setDraft(p => { const row = p[id]; if (!row) return p; return { ...p, [id]: row.map((s, i) => i === d ? (paint || shiftDefs[0]?.key || "-") : s) }; });
@@ -496,7 +520,7 @@ export default function App() {
     planView, planDate, empPlanView, filterEmp, filterShift, reqFilter,
     lOrg, lId, lPin, wiz, showOrgs, linkForm, editE, ef, rstE, rstP,
     orgEd, editShift, showHoliday, holidayDate, holidayName, editReq, decNote,
-    nef, dragSh, showNotifs, planMo, genLoad, editMode, draft, paint,
+    nef, dragSh, showNotifs, planMo, genLoad, genAsk, editMode, draft, paint,
     wishMonth, wsel, wishNote, rqForm, rqTab, pinCh,
     // Setters
     setDark, setOrgs, setOrgId, setData, setView, setMe, setIsSuper, setWasSuper,
@@ -504,7 +528,7 @@ export default function App() {
     setFilterShift, setReqFilter, setLOrg, setLId, setLPin, setWiz, setShowOrgs,
     setLinkForm, setEditE, setEf, setRstE, setRstP, setOrgEd, setEditShift,
     setShowHoliday, setHolidayDate, setHolidayName, setEditReq, setDecNote,
-    setNef, setDragSh, setShowNotifs, setPlanMo, setGenLoad, setEditMode,
+    setNef, setDragSh, setShowNotifs, setPlanMo, setGenLoad, setGenAsk, setEditMode,
     setDraft, setPaint, setWishMonth, setWsel, setWishNote, setRqForm, setRqTab, setPinCh,
     // Computed
     org, emps, wishes, scheds, reqs: reqList, shiftDefs, weekStdHours, holidays,

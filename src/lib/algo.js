@@ -32,15 +32,18 @@ export function canWork(sc, id, d, sh, shiftDefs) {
 // ArbZG-konformer Auto-Planer. Pure function — kein Seiteneffekt, unit-testbar.
 // opts.baseSc + opts.fromDay (1-basiert): Teilregenerierung — Tage vor fromDay
 // bleiben fixiert (zählen für Stundenkonten mit), ab fromDay wird neu verteilt.
+// opts.baseSc + opts.keepExisting: ALLE vorhandenen Schichten bleiben stehen
+// (manuelle Planung), es werden nur unbesetzte Soll-Schichten aufgefüllt.
 export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) {
   const days = dim(y, mo);
-  const fromIdx = opts.fromDay ? Math.max(0, Math.min(days, opts.fromDay - 1)) : 0;
+  const keepAll = !!(opts.keepExisting && opts.baseSc);
+  const fromIdx = keepAll ? 0 : (opts.fromDay ? Math.max(0, Math.min(days, opts.fromDay - 1)) : 0);
   const sc = {};
-  if (opts.baseSc && fromIdx > 0) {
-    // Fixierte Tage aus dem bestehenden Plan übernehmen, ab fromIdx leeren (U/K bleibt)
+  if (opts.baseSc && (keepAll || fromIdx > 0)) {
+    // Fixierte Tage aus dem bestehenden Plan übernehmen; ohne keepAll ab fromIdx leeren (U/K bleibt)
     emps.forEach(e => {
       const base = opts.baseSc[e.id] || Array(days).fill("-");
-      sc[e.id] = base.map((s, i) => (i < fromIdx || s === "U" || s === "K") ? s : "-");
+      sc[e.id] = base.map((s, i) => (keepAll || i < fromIdx || s === "U" || s === "K") ? s : "-");
     });
   } else {
     emps.forEach(e => sc[e.id] = Array(days).fill("-"));
@@ -55,9 +58,10 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) 
   // Max. Arbeitstage pro Woche: Zähler je Mitarbeiter je Kalender-Woche (0-basiert im Monat)
   const weekDayCount = {}; emps.forEach(e => weekDayCount[e.id] = {});
   // Fixierte Tage in die Konten einrechnen, damit der Stunden-Deckel weiter gilt
-  if (fromIdx > 0) {
+  if (keepAll || fromIdx > 0) {
+    const keptLimit = keepAll ? days : fromIdx;
     emps.forEach(e => {
-      for (let i = 0; i < fromIdx; i++) {
+      for (let i = 0; i < keptLimit; i++) {
         const k = sc[e.id][i];
         const def = shiftDefs.find(x => x.key === k);
         if (!def) continue;
@@ -106,7 +110,8 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) 
     for (const def of dayShifts) {
       const sh = def.key, need = def.required;
       const shHours = hoursOf(def.start, def.end);
-      let got = 0;
+      // Bereits besetzte Plätze (fixierte/manuelle Schichten) zählen zum Soll
+      let got = emps.filter(e => sc[e.id][d] === sh).length;
       for (let pass = 0; pass < 3 && got < need; pass++) {
         const capF = pass < 2 ? 1.02 : 1.10;
         const candidates = [...emps]
