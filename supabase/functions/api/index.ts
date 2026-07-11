@@ -606,7 +606,7 @@ const ORG_SELF_FIELDS: Record<string, string> = {
   shifts: "shifts", holidays: "holidays", perms: "perms", accent: "accent", timeclock: "timeclock",
 };
 // Freie Einstellungen, die gesammelt in orgs.settings (jsonb) landen
-const ORG_SETTINGS_FIELDS = ["availMode", "absEntryMode", "regenLeadDays"];
+const ORG_SETTINGS_FIELDS = ["availMode", "absEntryMode", "regenLeadDays", "modules"];
 
 async function actSet(body: Any, session: Session) {
   const key = String(body.key || "");

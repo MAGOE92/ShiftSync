@@ -1,6 +1,6 @@
 import { useApp } from "../../App.jsx";
 import { Icon } from "../../theme/icons.jsx";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function AdminView() {
   const {
@@ -17,6 +17,7 @@ export default function AdminView() {
     genLoad, genAsk, setGenAsk, regenAsk, setRegenAsk, pendCount, today, cm, nm, cy, cm0, market,
     orgPlan, orgStatus, seatLimit, seatUsed, seatFull, trialDaysLeft, canAuto,
     can, canManage, isOwner,
+    modules, hasModule, setModule, MODULES,
     ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, SHIFT_COLORS, ACCENTS, MF, DW, PR,
     T: theme, hoursOf, pm, nms,
     getShiftInfo, shBg, shC, shX, calcHours, targetHours, fmtH,
@@ -70,6 +71,17 @@ export default function AdminView() {
   const pdate = new Date(planDate);
   const viewDays = planView === "day" ? [pdate] : planView === "week" ? (() => { const s = new Date(pdate); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return Array.from({ length: 7 }, (_, i) => { const d = new Date(s); d.setDate(s.getDate() + i); return d; }); })() : [];
   const filteredReqs = reqFilter === "all" ? reqs : reqs.filter(r => r.status === reqFilter);
+
+  // Navigation — nur freigeschaltete Module erscheinen
+  const navItems = [
+    ["dash", "Übersicht", "chart"],
+    ["staff", "Team", "users"],
+    ...(hasModule("reqs") ? [["reqs", `Anfragen${pendCount ? " (" + pendCount + ")" : ""}`, "inbox"]] : []),
+    ...(hasModule("sched") ? [["sched", "Planer", "calendar"]] : []),
+    ...((isOwner || can("manageOrg") || can("manageShifts")) ? [["settings", "Betrieb", "settings"]] : []),
+  ];
+  // Wird ein Modul deaktiviert, während dessen Tab offen ist → zurück zur Übersicht
+  useEffect(() => { if (!navItems.some(([k]) => k === aTab)) setATab("dash"); }, [aTab, navItems.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.tx }}>
@@ -355,9 +367,46 @@ export default function AdminView() {
         );
       })()}
 
-      {Header(<span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}><Avatar emp={me} size={30} />{me.name}</span>, `${org.name.toUpperCase()} · ${org.code}${wasSuper ? " · SUPPORT-MODUS" : ""}`, <>{DarkBtn}{NotifBell}{wasSuper && <button style={btn("pu", true)} onClick={() => { setIsSuper(true); setWasSuper(false); setOrgId(null); setMe(null); setView("super"); }}><Icon n="shield" s={14} />Konsole</button>}{(wasSuper || me.role === "owner") && <button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={() => setShowOrgs(true)} title={wasSuper ? "Kunde wechseln" : "Betrieb wechseln"}><Icon n="building" /></button>}<button style={btn("bl", true)} onClick={() => { setView("emp"); }} title="Mitarbeiter-Ansicht"><Icon n="user" /></button><button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={logout} title="Abmelden"><Icon n="logout" /></button></>)}
-      {TabBar([["dash", "Übersicht", "chart"], ["staff", "Team", "users"], ["reqs", `Anfragen${pendCount ? " (" + pendCount + ")" : ""}`, "inbox"], ["sched", "Planer", "calendar"], ...((isOwner || can("manageOrg") || can("manageShifts")) ? [["settings", "Betrieb", "settings"]] : [])], aTab, setATab)}
+      {isMobile && <>
+        {Header(<span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}><Avatar emp={me} size={30} />{me.name}</span>, `${org.name.toUpperCase()} · ${org.code}${wasSuper ? " · SUPPORT-MODUS" : ""}`, <>{DarkBtn}{NotifBell}{wasSuper && <button style={btn("pu", true)} onClick={() => { setIsSuper(true); setWasSuper(false); setOrgId(null); setMe(null); setView("super"); }}><Icon n="shield" s={14} />Konsole</button>}{(wasSuper || me.role === "owner") && <button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={() => setShowOrgs(true)} title={wasSuper ? "Kunde wechseln" : "Betrieb wechseln"}><Icon n="building" /></button>}<button style={btn("bl", true)} onClick={() => { setView("emp"); }} title="Mitarbeiter-Ansicht"><Icon n="user" /></button><button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={logout} title="Abmelden"><Icon n="logout" /></button></>)}
+        {TabBar(navItems, aTab, setATab)}
+      </>}
 
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+      {!isMobile && <aside style={{ width: 228, flexShrink: 0, position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column", background: T.card, borderRight: `1px solid ${T.bord}`, padding: "18px 11px 14px", boxSizing: "border-box" }}>
+        <div style={{ padding: "0 8px 18px" }}>
+          <Logo size={30} wordSize={16} />
+          <div style={{ fontSize: 9, fontWeight: 700, color: T.tx2, letterSpacing: 1.2, marginTop: 7, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{org.name} · {org.code}{wasSuper ? " · SUPPORT" : ""}</div>
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {navItems.map(([k, l, ic]) => { const active = aTab === k; const badge = l.match(/\((\d+)\)/)?.[1]; return (
+            <button key={k} onClick={() => setATab(k)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "none", cursor: "pointer", textAlign: "left", background: active ? T.acc + "1a" : "transparent", color: active ? T.acc : T.tx2, fontSize: 13, fontWeight: active ? 700 : 600, fontFamily: "inherit" }}>
+              <Icon n={ic} s={16} />
+              <span style={{ flex: 1 }}>{l.replace(/\s*\(\d+\)/, "")}</span>
+              {badge && <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: T.acc, color: "#fff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
+            </button>
+          ); })}
+        </nav>
+        <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+          {wasSuper && <button style={{ ...btn("pu", true), justifyContent: "center" }} onClick={() => { setIsSuper(true); setWasSuper(false); setOrgId(null); setMe(null); setView("super"); }}><Icon n="shield" s={14} />Konsole</button>}
+          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, background: T.bg2 }}>
+            <Avatar emp={me} size={32} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me.name}</div>
+              <div style={{ fontSize: 10.5, color: T.tx2 }}>{ROLES[me.role || "staff"].l}</div>
+            </div>
+            <button style={{ background: "none", border: "none", cursor: "pointer", color: T.tx2, padding: 4 }} onClick={logout} title="Abmelden"><Icon n="logout" s={15} /></button>
+          </div>
+        </div>
+      </aside>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+      {!isMobile && <header style={{ height: 54, display: "flex", alignItems: "center", gap: 8, padding: "0 18px", background: T.card, borderBottom: `1px solid ${T.bord}`, position: "sticky", top: 0, zIndex: 5 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", letterSpacing: "-0.02em" }}>{(navItems.find(([k]) => k === aTab)?.[1] || "Übersicht").replace(/\s*\(\d+\)/, "")}</span>
+        <div style={{ flex: 1 }} />
+        {DarkBtn}{NotifBell}
+        {(wasSuper || me.role === "owner") && <button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={() => setShowOrgs(true)} title={wasSuper ? "Kunde wechseln" : "Betrieb wechseln"}><Icon n="building" /></button>}
+        <button style={btn("bl", true)} onClick={() => setView("emp")} title="Mitarbeiter-Ansicht"><Icon n="user" s={14} />Mitarbeiter-Ansicht</button>
+      </header>}
       <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
         {wasSuper && <div style={{ ...crd, marginBottom: 14, background: T.pu, borderColor: T.puT + "40", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontSize: 20 }}></div>
@@ -390,7 +439,7 @@ export default function AdminView() {
             </div>
           </div>}
           {emps.length <= 1 && <div style={{ ...crd, marginBottom: 14, background: T.bl, borderColor: T.blT + "40" }}><h3 style={{ margin: "0 0 8px", fontSize: 14, color: T.blT }}>Startklar · Betriebs-ID: <span style={{ fontFamily: "ui-monospace,monospace" }}>{org.code}</span></h3><p style={{ margin: "0 0 12px", fontSize: 13, color: T.blT }}>Mit dieser Betriebs-ID melden sich deine Mitarbeiter an.</p><button style={btn("p")} onClick={seedDemo}>Demo-Team laden</button></div>}
-          {canManage && emps.length > 1 && <div style={{ ...crd, marginBottom: 14 }}>
+          {canManage && emps.length > 1 && hasModule("ann") && <div style={{ ...crd, marginBottom: 14 }}>
             <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700 }}>Ankündigung an das Team</h3>
             <p style={{ margin: "0 0 10px", fontSize: 11, color: T.tx2 }}>Erscheint bei allen Mitarbeitern als Benachrichtigung (Glocke).</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -550,7 +599,7 @@ export default function AdminView() {
           <div style={crd}>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Team ({emps.length})</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}><button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
+              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{hasModule("hr") && <button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>}{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
             </div>
           </div>
         </div>}
@@ -784,13 +833,23 @@ export default function AdminView() {
           </div>}
 
           {(isOwner || can("manageOrg")) && <div style={{ ...crd, marginBottom: 12 }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Zeiterfassung</h3>
-            <label style={lbl}>Stempeluhr für Mitarbeiter</label>
-            <select style={inp} value={org.timeclock ?? 'self'} onChange={e => setTimeclock(e.target.value)}>
-              <option value="self">Aktiviert — Mitarbeiter können stempeln</option>
-              <option value="off">Deaktiviert — Stempeluhr wird nicht angezeigt</option>
-            </select>
-            <p style={{ fontSize: 11, color: T.tx2, margin: "4px 0 0" }}>Manche Betriebe benötigen keine Zeiterfassung. Die Einstellung wirkt sofort.</p>
+            <h3 style={{ margin: "0 0 3px", fontSize: 15, fontWeight: 700 }}>App-Module</h3>
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: T.tx2 }}>Schalte Funktionen frei oder blende sie aus — die App zeigt nur, was dein Betrieb wirklich braucht. Wirkt sofort für alle Mitarbeiter.</p>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9 }}>
+              {Object.entries(MODULES).map(([k, m]) => { const on = hasModule(k); return (
+                <div key={k} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 13px", background: on ? T.bg2 : T.bg3, borderRadius: 12, opacity: on ? 1 : .65 }}>
+                  <Icon n={m.ic} s={17} style={{ color: on ? T.acc : T.tx2, marginTop: 2 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{m.l}</div>
+                    <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 2 }}>{m.d}</div>
+                  </div>
+                  <button onClick={() => setModule(k, !on)} title={on ? "Deaktivieren" : "Aktivieren"}
+                    style={{ width: 38, height: 22, borderRadius: 11, border: "none", cursor: "pointer", flexShrink: 0, background: on ? T.acc : T.bord2, position: "relative", transition: "background .15s" }}>
+                    <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s", boxShadow: "0 1px 3px rgba(0,0,0,.25)" }} />
+                  </button>
+                </div>
+              ); })}
+            </div>
           </div>}
 
           {isOwner && <div style={{ ...crd, marginBottom: 12 }}>
@@ -859,6 +918,8 @@ export default function AdminView() {
             </div>
           </div>}
         </div>}
+      </div>
+      </div>
       </div>
     </div>
   );

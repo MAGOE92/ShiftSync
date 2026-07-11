@@ -5,7 +5,7 @@ import { Icon } from "../../theme/icons.jsx";
 export default function EmpView() {
   const {
     T, crd, inp, lbl, btn,
-    org, orgId, me, wasSuper, canManage,
+    org, orgId, me, wasSuper, canManage, hasModule,
     emps, wishes, scheds, reqs: reqList, shiftDefs, holidays,
     eTab, setETab, empPlanView, setEmpPlanView,
     wishMonth, setWishMonth, wsel, wishNote, setWishNote,
@@ -27,6 +27,13 @@ export default function EmpView() {
   // Modus "Nur Verwaltung": Urlaub/Krank nicht wählbar — auf Schichttausch umstellen
   const adminAbsOnly = (org?.absEntryMode ?? "both") === "admin";
   useEffect(() => { if (adminAbsOnly && rqForm.type !== "swap") setRqForm(p => ({ ...p, type: "swap" })); }, [adminAbsOnly, rqForm.type]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modul-Gating: deaktivierte Tabs verlassen
+  useEffect(() => {
+    const tabs = ["home", ...(hasModule("sched") ? ["plan"] : []), ...((hasModule("reqs") || hasModule("wishes")) ? ["reqs"] : []), "profile"];
+    if (!tabs.includes(eTab)) setETab("home");
+    if (eTab === "reqs" && !hasModule("reqs") && rqTab !== "wish") setRqTab("wish");
+  }, [eTab, rqTab, hasModule("sched"), hasModule("reqs"), hasModule("wishes")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const MonthNav = ({ value, onChange, min }) => {
@@ -104,7 +111,12 @@ export default function EmpView() {
           <button style={{ ...btn("s", true), padding: "7px 10px" }} onClick={logout} title="Abmelden"><Icon n="logout" /></button>
         </>
       )}
-      {TabBar([["home", "Start", "home"], ["plan", "Plan", "calendar"], ["reqs", "Anfragen", "inbox"], ["profile", "Profil", "user"]], eTab, setETab)}
+      {TabBar([
+        ["home", "Start", "home"],
+        ...(hasModule("sched") ? [["plan", "Plan", "calendar"]] : []),
+        ...((hasModule("reqs") || hasModule("wishes")) ? [["reqs", "Anfragen", "inbox"]] : []),
+        ["profile", "Profil", "user"],
+      ], eTab, setETab)}
 
       <div style={{ padding: 16, maxWidth: 540, margin: "0 auto" }}>
 
@@ -184,7 +196,7 @@ export default function EmpView() {
         </div>}
 
         {eTab === "plan" && <>
-          <div style={{ ...crd, marginBottom: 12 }}>
+          {hasModule("market") && <div style={{ ...crd, marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}><Icon n="repeat" s={16} /><h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Schichtbörse</h3>{others.length > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, background: T.bl, color: T.blT, borderRadius: 20, padding: "2px 8px" }}>{others.length} offen</span>}</div>
             <p style={{ margin: "0 0 12px", fontSize: 11.5, color: T.tx2 }}>Schicht abgeben oder von Kollegen übernehmen — Ruhezeiten werden automatisch geprüft, Leitung wird informiert.</p>
             {others.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12 }}>
@@ -210,14 +222,14 @@ export default function EmpView() {
                 </div>
               </details>
               : !others.length && !myOffers.length && <p style={{ margin: 0, fontSize: 12, color: T.tx2 }}>Keine offenen Angebote und keine kommenden Schichten.</p>}
-          </div>
+          </div>}
           <div style={{ ...crd, marginBottom: 12 }}><h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>{MF[cm0]} {cy}</h3>{MiniCal(myPlanCur, cy, cm0)}</div>
           <div style={crd}><h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>{MF[nm0]} {ny}</h3>{MiniCal(myPlanNxt, ny, nm0)}</div>
         </>}
 
         {eTab === "reqs" && <div>
           <div style={{ display: "flex", marginBottom: 12, background: T.bg2, borderRadius: 12, padding: 4, gap: 4 }}>
-            {[["new", "Neue"], ["wish", "Wunschfrei"], ["sent", "Verlauf"]].map(([k, l]) => <button key={k} style={{ flex: 1, padding: "9px", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: rqTab === k ? 700 : 500, background: rqTab === k ? T.invBg : "transparent", color: rqTab === k ? T.inv : T.tx2 }} onClick={() => setRqTab(k)}>{l}</button>)}
+            {[...(hasModule("reqs") ? [["new", "Neue"]] : []), ...(hasModule("wishes") ? [["wish", "Wunschfrei"]] : []), ...(hasModule("reqs") ? [["sent", "Verlauf"]] : [])].map(([k, l]) => <button key={k} style={{ flex: 1, padding: "9px", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: rqTab === k ? 700 : 500, background: rqTab === k ? T.invBg : "transparent", color: rqTab === k ? T.inv : T.tx2 }} onClick={() => setRqTab(k)}>{l}</button>)}
           </div>
 
           {rqTab === "new" && <div style={crd}>

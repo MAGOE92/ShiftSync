@@ -72,6 +72,18 @@ export const DEFAULT_PERMS = {
   staff:    Object.fromEntries(Object.keys(PERMS).map(k => [k, false])),
 };
 
+// App-Module: pro Betrieb freischaltbar (org.modules). Fehlender Eintrag = an.
+// "clock" wird aus Kompatibilität über org.timeclock gesteuert (setModule mappt).
+export const MODULES = {
+  sched:  { l: "Dienstplan & Auto-Planung", d: "Planer, Auto-Generator, Ausfall-Neuverteilung, Vormonats-Muster", ic: "calendar" },
+  reqs:   { l: "Anträge & Abwesenheiten",   d: "Urlaub, Krankmeldung, Genehmigungen, Abwesenheitskalender",       ic: "inbox" },
+  market: { l: "Schichtbörse",              d: "Schichten anbieten und von Kollegen übernehmen lassen",           ic: "repeat" },
+  clock:  { l: "Zeiterfassung",             d: "Stempeluhr für Mitarbeiter (Ein-/Ausstempeln)",                   ic: "clock" },
+  ann:    { l: "Ankündigungen",             d: "Team-Mitteilungen der Verwaltung über die Benachrichtigungen",    ic: "bell" },
+  hr:     { l: "Mitarbeiterakte",           d: "Stammdaten, Urlaubskonto, Kranktage, HR-Notizen",                 ic: "clipboard" },
+  wishes: { l: "Wunschfrei",                d: "Mitarbeiter können Wunschfrei-Tage für die Planung angeben",      ic: "star" },
+};
+
 export const DEFAULT_SHIFTS = [
   { key: "F", label: "Früh",  start: "06:00", end: "14:00", required: 2, colorIdx: 0 },
   { key: "S", label: "Spät",  start: "14:00", end: "22:00", required: 2, colorIdx: 1 },

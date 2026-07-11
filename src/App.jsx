@@ -6,7 +6,7 @@ import { algo } from "./lib/algo.js";
 import { rid, tms, nms, pm, isoDate, hoursOf, relTime, doICS, datesBetween } from "./lib/utils.js";
 import {
   SH, SHIFT_COLORS, ROLES, ACCENTS, PLANS, STATUS,
-  PERMS, DEFAULT_PERMS, DEFAULT_SHIFTS, MF, DW, PR,
+  PERMS, DEFAULT_PERMS, DEFAULT_SHIFTS, MODULES, MF, DW, PR,
 } from "./theme/constants.js";
 import { Icon } from "./theme/icons.jsx";
 import LoginView from "./views/Login.jsx";
@@ -167,6 +167,15 @@ export default function App() {
   const weekStdHours = org?.weekStdHours || 40;
   const holidays = org?.holidays || [];
   const permsByRole = org?.perms || DEFAULT_PERMS;
+
+  // App-Module: fehlender Eintrag = aktiv. "clock" leitet sich aus der
+  // bestehenden timeclock-Einstellung ab (Kompatibilität mit ShiftSync 1).
+  const modules = {
+    ...Object.fromEntries(Object.keys(MODULES).map(k => [k, true])),
+    ...(org?.modules || {}),
+    clock: (org?.timeclock ?? "self") !== "off",
+  };
+  const hasModule = k => modules[k] !== false;
 
   const T = dark
     ? { bg: "#0c0c0e", bg2: "#1a1a1d", bg3: "#070708", card: "#161618", bord: "#2a2a2e", bord2: "#3a3a40", tx: "#f4f4f1", tx2: "#9a9a93", inv: "#0c0c0e", invBg: "#f4f4f1", acc: "#8b87f5", accGrad: "#8b87f5", ok: "#10261c", okT: "#5fd9a0", er: "#2e1616", erT: "#f0888a", w: "#2b220e", wT: "#e8b14e", bl: "#181a33", blT: "#9aa0f7", pu: "#211a3a", puT: "#b9aef7" }
@@ -435,6 +444,12 @@ export default function App() {
   };
   const setAccent = async c => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, accent: c } : o)); flash("ok", "Akzentfarbe übernommen"); };
   const setTimeclock = async v => { await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, timeclock: v } : o)); flash("ok", "Stempeluhr-Einstellung gespeichert ✓"); };
+  // Modul an-/abschalten. clock läuft über timeclock (eine Wahrheit, kein Duplikat).
+  const setModule = async (k, v) => {
+    if (k === "clock") { await setTimeclock(v ? "self" : "off"); return; }
+    await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, modules: { ...(o.modules || {}), [k]: v } } : o));
+    flash("ok", `Modul „${MODULES[k]?.l || k}" ${v ? "aktiviert" : "deaktiviert"} ✓`);
+  };
   const saveShift = async () => { const s = editShift; if (!s.label.trim() || !s.key.trim()) { flash("er", "Bezeichnung und Kürzel nötig"); return; } const newShifts = s.idx === undefined ? [...shiftDefs, s] : shiftDefs.map((x, i) => i === s.idx ? s : x); await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, shifts: newShifts } : o)); setEditShift(null); flash("ok", "Schichtmodell gespeichert ✓"); };
   const delShift = async idx => { const newShifts = shiftDefs.filter((_, i) => i !== idx); await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, shifts: newShifts } : o)); flash("ok", "Schichtmodell entfernt"); };
   const addHoliday = async () => { if (!holidayDate || !holidayName.trim()) { flash("er", "Datum und Name nötig"); return; } const newH = [...holidays, { date: holidayDate, name: holidayName.trim() }]; await saveOrgs(orgs.map(o => o.id === orgId ? { ...o, holidays: newH } : o)); setHolidayDate(""); setHolidayName(""); flash("ok", "Sperrtag hinzugefügt ✓"); };
@@ -557,10 +572,11 @@ export default function App() {
     // UI helpers
     getShiftInfo, shBg, shC, shX, calcHours, targetHours, fmtH,
     can, canManage, isOwner, initials,
+    modules, hasModule, setModule,
     // Shared UI
     Logo, Avatar, Tst, DarkBtn, NotifBell, NotifPanel, Header, TabBar,
     // Re-exported constants
-    ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, SHIFT_COLORS, SH, ACCENTS, MF, DW, PR,
+    ROLES, PLANS, STATUS, PERMS, DEFAULT_PERMS, MODULES, SHIFT_COLORS, SH, ACCENTS, MF, DW, PR,
     // Lib functions
     hoursOf, relTime, doICS, pm, nms, tms, rid, isoDate,
     arbzgCheck,
