@@ -1,5 +1,6 @@
 import { useApp } from "../../App.jsx";
 import { Icon } from "../../theme/icons.jsx";
+import { canWork } from "../../lib/algo.js";
 import { useEffect, useState } from "react";
 
 export default function AdminView() {
@@ -23,7 +24,7 @@ export default function AdminView() {
     getShiftInfo, shBg, shC, shX, calcHours, targetHours, fmtH,
     flash, clockData,
     seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
-    absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
+    absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft, assignShifts,
     refreshData, exportPayroll, handleReq, saveOrgEdits, addAbsence, regenGaps, copyPrevPattern, announce, setAccent, setTimeclock, saveShift, delShift,
     addHoliday, delHoliday, setPerm, printPlan, exportCSV,
     setOrgStatus, setOrgPlan, setIsSuper, setWasSuper, setOrgId, setData, setMe, setView,
@@ -39,6 +40,8 @@ export default function AdminView() {
   const [absForm, setAbsForm] = useState({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" });
   const [absCalMo, setAbsCalMo] = useState(null); // Monat des Abwesenheitskalenders (null = aktueller)
   const [annText, setAnnText] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);    // KI-Vorschläge-Panel (Planer)
+  const [sdSel, setSdSel] = useState(null);       // Schicht-Detail-Panel: { empId, day }
 
   const adjMonth = (ym, delta) => { const { y, m0 } = pm(ym); const d = new Date(y, m0 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const MonthNav = ({ value, onChange }) => {
@@ -71,6 +74,33 @@ export default function AdminView() {
   const pdate = new Date(planDate);
   const viewDays = planView === "day" ? [pdate] : planView === "week" ? (() => { const s = new Date(pdate); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return Array.from({ length: 7 }, (_, i) => { const d = new Date(s); d.setDate(s.getDate() + i); return d; }); })() : [];
   const filteredReqs = reqFilter === "all" ? reqs : reqs.filter(r => r.status === reqFilter);
+
+  // ── KI-Vorschläge: offene Soll-Schichten + bester verfügbarer Kandidat ──
+  // Geprüft: ArbZG (canWork), Stunden-Deckel (max 102 % Soll), Wochentag-Verfügbarkeit.
+  // Sequenziell simuliert, damit Folge-Vorschläge frühere berücksichtigen.
+  const minSlotDay = planMo === cm ? today.getDate() : 0; // Vergangenheit nie besetzen
+  const aiSuggestions = (() => {
+    if (!curSc || editMode) return [];
+    const openSlots = gapDays.filter(g => g.d >= minSlotDay).flatMap(g =>
+      g.gs.flatMap(s => Array.from({ length: s.need - s.has }, () => ({ d: g.d, key: s.key, label: s.label, dow: g.dow })))
+    );
+    if (!openSlots.length) return [];
+    const sim = {}; Object.keys(curSc).forEach(id => { sim[id] = [...curSc[id]]; });
+    planEmps.forEach(e => { if (!sim[e.id]) sim[e.id] = Array(days).fill("-"); });
+    return openSlots.map(sl => {
+      const def = shiftDefs.find(s => s.key === sl.key);
+      const shH = def ? hoursOf(def.start, def.end) : 8;
+      const best = planEmps
+        .filter(e => canWork(sim, e.id, sl.d, sl.key, shiftDefs))
+        .filter(e => { if (!e.avail) return true; const dow = new Date(y, m0, sl.d + 1).getDay(); const allowed = e.avail[String(dow)]; return !allowed || allowed.includes(sl.key); })
+        .map(e => ({ e, room: targetHours(e, days) * 1.02 - calcHours(sim[e.id]) - shH }))
+        .filter(x => x.room > -0.01)
+        .sort((a, b) => b.room - a.room)[0];
+      if (best) sim[best.e.id][sl.d] = sl.key;
+      return { ...sl, emp: best?.e || null, room: best?.room ?? 0 };
+    });
+  })();
+  const aiFillable = aiSuggestions.filter(s => s.emp);
 
   // Navigation — nur freigeschaltete Module erscheinen
   const navItems = [
@@ -200,6 +230,74 @@ export default function AdminView() {
         <label style={lbl}>Farbe</label><div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>{SHIFT_COLORS.map((c, i) => <button key={i} onClick={() => setEditShift(p => ({ ...p, colorIdx: i }))} style={{ width: 34, height: 34, borderRadius: 8, border: editShift.colorIdx === i ? `3px solid ${T.tx}` : `1px solid ${T.bord2}`, background: c.bg, cursor: "pointer" }} />)}</div>
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}><button style={{ ...btn("s"), flex: 1 }} onClick={() => setEditShift(null)}>Abbrechen</button><button style={{ ...btn("p"), flex: 2 }} onClick={saveShift}>Speichern</button></div>
       </div></div>}
+
+      {/* ── KI-Vorschläge-Panel ── */}
+      {aiOpen && <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 340, maxWidth: "94vw", background: T.card, borderLeft: `1px solid ${T.bord}`, zIndex: 9980, display: "flex", flexDirection: "column", boxShadow: "-14px 0 44px rgba(0,0,0,.18)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 16px", borderBottom: `1px solid ${T.bord}` }}>
+          <div style={{ width: 26, height: 26, borderRadius: 8, background: T.acc, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon n="sparkle" s={14} style={{ color: "#fff" }} /></div>
+          <span style={{ fontSize: 14, fontWeight: 800, flex: 1 }}>KI-Vorschläge</span>
+          <button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setAiOpen(false)}><Icon n="x" s={14} /></button>
+        </div>
+        <div style={{ padding: "11px 16px", background: T.acc + "14", borderBottom: `1px solid ${T.bord}`, fontSize: 12, lineHeight: 1.5 }}>
+          {aiFillable.length} von {aiSuggestions.length} offenen Schichten können besetzt werden — geprüft gegen ArbZG, Stunden-Deckel und Verfügbarkeit.
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 9 }}>
+          {aiSuggestions.map((s, i) => (
+            <div key={i} style={{ border: `1px solid ${T.bord}`, borderRadius: 12, padding: "11px 12px", background: T.bg2 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.tx2, letterSpacing: .6, textTransform: "uppercase", marginBottom: 7 }}>{s.dow} {s.d + 1}. · {s.label} ({s.key})</div>
+              {s.emp ? <>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9 }}>
+                  <Avatar emp={s.emp} size={30} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{s.emp.name}</div>
+                    <div style={{ fontSize: 10.5, color: T.tx2 }}>{fmtH ? fmtH(Math.max(0, s.room)) : Math.round(s.room)} h Puffer bis zum Stunden-Soll</div>
+                  </div>
+                </div>
+                <button style={{ ...btn("p"), width: "100%", justifyContent: "center" }} onClick={() => assignShifts([{ empId: s.emp.id, day: s.d, key: s.key }])}><Icon n="check" s={14} />Übernehmen</button>
+              </> : <div style={{ fontSize: 11.5, color: T.tx2, fontStyle: "italic" }}>Kein Kandidat verfügbar — ArbZG oder Stundenkonten lassen keine Besetzung zu.</div>}
+            </div>
+          ))}
+        </div>
+        {aiFillable.length > 1 && <div style={{ padding: "12px 14px", borderTop: `1px solid ${T.bord}` }}>
+          <button style={{ ...btn("p"), width: "100%", justifyContent: "center" }} onClick={() => { assignShifts(aiFillable.map(s => ({ empId: s.emp.id, day: s.d, key: s.key }))); setAiOpen(false); }}><Icon n="sparkle" s={14} />Alle {aiFillable.length} besetzen</button>
+        </div>}
+      </div>}
+
+      {/* ── Schicht-Detail-Panel ── */}
+      {sdSel && (() => {
+        const emp = emps.find(e => e.id === sdSel.empId);
+        const sh = curSc?.[sdSel.empId]?.[sdSel.day];
+        if (!emp || !sh || sh === "-") return null;
+        const info = getShiftInfo(sh);
+        const dt = new Date(y, m0, sdSel.day + 1);
+        const isAbs2 = sh === "U" || sh === "K";
+        return <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 320, maxWidth: "94vw", background: T.card, borderLeft: `1px solid ${T.bord}`, zIndex: 9981, display: "flex", flexDirection: "column", boxShadow: "-14px 0 44px rgba(0,0,0,.18)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${T.bord}` }}>
+            <span style={{ fontSize: 14, fontWeight: 800 }}>Schicht-Details</span>
+            <button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setSdSel(null)}><Icon n="x" s={14} /></button>
+          </div>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 13, flex: 1, overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <Avatar emp={emp} size={42} />
+              <div><div style={{ fontSize: 15, fontWeight: 800 }}>{emp.name}</div><div style={{ fontSize: 11.5, color: T.tx2 }}>{ROLES[emp.role || "staff"].l} · {emp.workPct || 100}%</div></div>
+            </div>
+            <div style={{ background: shBg(sh), borderRadius: 12, padding: "13px 14px", borderLeft: `4px solid ${shX(sh)}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                <span style={{ padding: "2px 9px", borderRadius: 7, background: shX(sh), color: "#fff", fontSize: 10.5, fontWeight: 800 }}>{sh}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: shC(sh), opacity: .8 }}>{DW[dt.getDay()]}, {dt.getDate()}. {MF[m0]}</span>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: shC(sh), fontFamily: "'Schibsted Grotesk',sans-serif", letterSpacing: "-0.02em", lineHeight: 1 }}>{info.start ? `${info.start}–${info.end}` : (sh === "U" ? "Urlaub" : sh === "K" ? "Krank" : sh)}</div>
+              {info.label && <div style={{ fontSize: 12, color: shC(sh), opacity: .65, marginTop: 4 }}>{info.label}{info.start ? ` · ${hoursOf(info.start, info.end)} Std.` : ""}</div>}
+            </div>
+            {isAbs2
+              ? <p style={{ margin: 0, fontSize: 11.5, color: T.tx2 }}>Abwesenheit — wird über den Anfragen-Tab verwaltet, nicht im Planer.</p>
+              : can("createPlan") && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button style={{ ...btn("bl"), justifyContent: "center" }} onClick={() => { const dr = JSON.parse(JSON.stringify(scheds[planMo])); nonPlanEmps.forEach(e2 => { if (!dr[e2.id]) dr[e2.id] = Array(days).fill("-"); }); setDraft(dr); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); setSdSel(null); }}><Icon n="pencil" s={14} />Im Planer bearbeiten</button>
+                <button style={{ ...btn("er"), justifyContent: "center" }} onClick={() => { if (confirm(`Schicht ${sh} am ${dt.getDate()}. von ${emp.name} entfernen?`)) { assignShifts([{ empId: emp.id, day: sdSel.day, key: "-" }]); setSdSel(null); } }}><Icon n="trash" s={14} />Schicht entfernen</button>
+              </div>}
+          </div>
+        </div>;
+      })()}
 
       {genAsk && <div style={ovl}><div style={{ ...crd, width: "100%", maxWidth: 420 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -692,6 +790,7 @@ export default function AdminView() {
               {can("createPlan") && !baseSc && (() => { const { y: py, m0: pmn } = pm(planMo); const pd = new Date(py, pmn - 1, 1); const prevKey = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`; return scheds[prevKey] ? <button style={btn("s")} onClick={copyPrevPattern}><Icon n="repeat" s={15} />Muster aus Vormonat</button> : null; })()}
               {baseSc && !editMode && can("createPlan") && <button style={btn("w")} onClick={() => { const d = JSON.parse(JSON.stringify(scheds[planMo])); nonPlanEmps.forEach(e => { if (!d[e.id]) d[e.id] = Array(days).fill("-"); }); setDraft(d); setPaint(shiftDefs[0]?.key || "-"); setEditMode(true); }}><Icon n="pencil" s={15} />Bearbeiten</button>}
               {editMode && <><button style={btn("ok")} onClick={publishDraft}><Icon n="check" s={15} />Veröffentlichen</button><button style={btn("s")} onClick={() => { setEditMode(false); setDraft(null); }}>Abbrechen</button></>}
+              {baseSc && !editMode && aiSuggestions.length > 0 && canAuto && can("createPlan") && <button style={btn("p")} onClick={() => setAiOpen(true)}><Icon n="sparkle" s={15} />KI-Vorschläge ({aiFillable.length})</button>}
               {baseSc && !editMode && <><button style={btn("s")} onClick={printPlan}><Icon n="printer" s={15} />Drucken</button><button style={btn("s")} onClick={exportCSV}><Icon n="download" s={15} />CSV</button>{orgPlan.exportF && <button style={btn("bl")} onClick={exportPayroll}><Icon n="download" s={15} />Lohn-Export</button>}</>}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
@@ -727,7 +826,7 @@ export default function AdminView() {
           {curSc && planView === "week" && <div style={{ ...crd, overflowX: "auto" }}>
             <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>Woche ab {viewDays[0]?.toLocaleDateString("de-DE")}</h3>
             <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}><thead><tr><th style={{ padding: "8px 10px", background: T.invBg, color: T.inv, textAlign: "left", minWidth: 120 }}>Mitarbeiter</th>{viewDays.map(d => <th key={d.toISOString()} style={{ padding: "8px", background: T.invBg, color: T.inv, minWidth: 90, textAlign: "center" }}>{DW[d.getDay()]}<br /><span style={{ fontSize: 10, opacity: .7 }}>{d.getDate()}.{d.getMonth() + 1}</span></th>)}</tr></thead><tbody>
-              {filteredEmps.map((emp, ri) => { const bg = ri % 2 ? T.bg2 : T.card; return (<tr key={emp.id}><td style={{ padding: "7px 10px", fontWeight: 600, background: bg, borderRight: `1px solid ${T.bord}`, fontSize: 12 }}>{emp.name}</td>{viewDays.map(d => { const inM = d.getMonth() === m0 && d.getFullYear() === y; const dayIdx = inM ? d.getDate() - 1 : null; const sh = inM ? (curSc[emp.id] || [])[dayIdx] : "-"; const dim = filterShift !== "all" && filterShift !== sh; const info = getShiftInfo(sh); const isAbs = sh === "U" || sh === "K"; const grabbable = editMode && isShift(sh) && dayIdx != null; const dragging = dragSh && dragSh.empId === emp.id && dragSh.day === dayIdx; return (<td key={d.toISOString()} style={{ padding: "3px", background: bg, textAlign: "center", opacity: dim ? .3 : 1 }}><div draggable={grabbable} onDragStart={grabbable ? e => { setDragSh({ empId: emp.id, day: dayIdx, key: sh }); e.dataTransfer.effectAllowed = "move"; } : undefined} onDragEnd={() => setDragSh(null)} onDragOver={editMode && dayIdx != null ? e => e.preventDefault() : undefined} onDrop={editMode && dayIdx != null ? e => { e.preventDefault(); if (!dragSh) return; if (isAbs) { flash("er", "Urlaub/Krank lässt sich nicht überschreiben"); setDragSh(null); return; } moveShift(dragSh.empId, dragSh.day, emp.id, dayIdx); } : undefined} onClick={editMode && dayIdx != null ? () => paintCell(emp.id, dayIdx) : undefined} style={{ padding: "7px 6px", borderRadius: 7, background: shBg(sh), color: shC(sh), fontSize: 11, fontWeight: 700, cursor: editMode && dayIdx != null ? (grabbable ? "grab" : "pointer") : "default", opacity: dragging ? .35 : 1, outline: editMode && dragSh && !dragging && !isAbs && dayIdx != null ? `1px dashed ${T.acc}` : "none" }}>{sh === "-" ? "–" : sh}{info.start && <div style={{ fontSize: 8, fontWeight: 400, marginTop: 2 }}>{info.start}–{info.end}</div>}</div></td>); })}</tr>); })}
+              {filteredEmps.map((emp, ri) => { const bg = ri % 2 ? T.bg2 : T.card; return (<tr key={emp.id}><td style={{ padding: "7px 10px", fontWeight: 600, background: bg, borderRight: `1px solid ${T.bord}`, fontSize: 12 }}>{emp.name}</td>{viewDays.map(d => { const inM = d.getMonth() === m0 && d.getFullYear() === y; const dayIdx = inM ? d.getDate() - 1 : null; const sh = inM ? (curSc[emp.id] || [])[dayIdx] : "-"; const dim = filterShift !== "all" && filterShift !== sh; const info = getShiftInfo(sh); const isAbs = sh === "U" || sh === "K"; const grabbable = editMode && isShift(sh) && dayIdx != null; const dragging = dragSh && dragSh.empId === emp.id && dragSh.day === dayIdx; return (<td key={d.toISOString()} style={{ padding: "3px", background: bg, textAlign: "center", opacity: dim ? .3 : 1 }}><div draggable={grabbable} onDragStart={grabbable ? e => { setDragSh({ empId: emp.id, day: dayIdx, key: sh }); e.dataTransfer.effectAllowed = "move"; } : undefined} onDragEnd={() => setDragSh(null)} onDragOver={editMode && dayIdx != null ? e => e.preventDefault() : undefined} onDrop={editMode && dayIdx != null ? e => { e.preventDefault(); if (!dragSh) return; if (isAbs) { flash("er", "Urlaub/Krank lässt sich nicht überschreiben"); setDragSh(null); return; } moveShift(dragSh.empId, dragSh.day, emp.id, dayIdx); } : undefined} onClick={editMode && dayIdx != null ? () => paintCell(emp.id, dayIdx) : ((isShift(sh) || isAbs) && dayIdx != null ? () => setSdSel({ empId: emp.id, day: dayIdx }) : undefined)} style={{ padding: sh === "-" ? "12px 6px" : "8px 10px", borderRadius: 9, background: shBg(sh), color: shC(sh), fontSize: 11, fontWeight: 700, textAlign: sh === "-" ? "center" : "left", borderLeft: sh === "-" ? "3px solid transparent" : `3px solid ${shX(sh)}`, minHeight: 38, boxSizing: "border-box", cursor: editMode && dayIdx != null ? (grabbable ? "grab" : "pointer") : ((isShift(sh) || isAbs) && dayIdx != null ? "pointer" : "default"), opacity: dragging ? .35 : 1, outline: editMode && dragSh && !dragging && !isAbs && dayIdx != null ? `1px dashed ${T.acc}` : "none" }}>{sh === "-" ? <span style={{ opacity: .35 }}>–</span> : <><div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "-0.01em" }}>{info.start ? `${info.start}–${info.end}` : (sh === "U" ? "Urlaub" : sh === "K" ? "Krank" : sh)}</div>{info.label && <div style={{ fontSize: 9, fontWeight: 600, opacity: .65, marginTop: 1 }}>{info.label}</div>}</>}</div></td>); })}</tr>); })}
             </tbody></table>
           </div>}
 
@@ -736,7 +835,7 @@ export default function AdminView() {
             <table style={{ borderCollapse: "collapse", fontSize: 10 }}><thead><tr><th style={{ padding: "7px 11px", background: T.invBg, color: T.inv, textAlign: "left", position: "sticky", left: 0, zIndex: 2, minWidth: 130, whiteSpace: "nowrap", borderRadius: "7px 0 0 0" }}>Team</th>{Array.from({ length: days }, (_, i) => { const dow = new Date(y, m0, i + 1).getDay(), we = dow === 0 || dow === 6; return (<th key={i} style={{ padding: "3px 0", background: we ? T.acc : T.invBg, color: T.inv, minWidth: 22, textAlign: "center" }}><div style={{ fontSize: 7, opacity: .7 }}>{DW[dow]}</div><div style={{ fontSize: 9 }}>{i + 1}</div></th>); })}<th style={{ padding: "7px", background: T.invBg, color: T.inv, textAlign: "center" }}>Σ</th></tr></thead>
               <tbody>
                 {filteredEmps.map((emp, ri) => { const row = curSc[emp.id] || Array(days).fill("-"), tot = row.filter(s => isShift(s)).length, bg = ri % 2 ? T.bg2 : T.card; return (
-                  <tr key={emp.id}><td style={{ padding: "4px 11px", fontWeight: 600, position: "sticky", left: 0, background: bg, borderRight: `1px solid ${T.bord}`, fontSize: 11, whiteSpace: "nowrap", color: T.tx }}>{emp.name} <span style={{ fontSize: 9, color: T.tx2, fontWeight: 400 }}>{emp.workPct || 100}%</span></td>{row.map((sh, d) => { const dim2 = filterShift !== "all" && filterShift !== sh; const dragging = dragSh && dragSh.empId === emp.id && dragSh.day === d; const isAbs = sh === "U" || sh === "K"; const grabbable = editMode && isShift(sh); return (<td key={d} style={{ padding: "1px", textAlign: "center", background: bg, opacity: dim2 ? .2 : 1 }}><div draggable={grabbable} onDragStart={grabbable ? e => { setDragSh({ empId: emp.id, day: d, key: sh }); e.dataTransfer.effectAllowed = "move"; } : undefined} onDragEnd={() => setDragSh(null)} onDragOver={editMode ? e => e.preventDefault() : undefined} onDrop={editMode ? e => { e.preventDefault(); if (!dragSh) return; if (isAbs) { flash("er", "Tag mit Urlaub/Krank lässt sich nicht überschreiben"); setDragSh(null); return; } moveShift(dragSh.empId, dragSh.day, emp.id, d); } : undefined} onClick={editMode ? () => paintCell(emp.id, d) : undefined} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", background: shBg(sh), color: shC(sh), borderRadius: 5, width: 20, height: 18, fontWeight: 700, fontSize: 9, cursor: editMode ? (grabbable ? "grab" : "pointer") : "default", opacity: dragging ? .35 : 1, outline: arbzgSet.has(emp.id + ":" + d) ? `2px solid ${T.erT}` : (editMode && dragSh && !dragging && !isAbs ? `1px dashed ${T.acc}` : "none") }}>{sh === "-" ? "" : sh}</div></td>); })}<td style={{ padding: "4px 7px", textAlign: "center", fontWeight: 700, background: bg, fontSize: 11, color: T.tx }}>{tot}</td></tr>
+                  <tr key={emp.id}><td style={{ padding: "4px 11px", fontWeight: 600, position: "sticky", left: 0, background: bg, borderRight: `1px solid ${T.bord}`, fontSize: 11, whiteSpace: "nowrap", color: T.tx }}>{emp.name} <span style={{ fontSize: 9, color: T.tx2, fontWeight: 400 }}>{emp.workPct || 100}%</span></td>{row.map((sh, d) => { const dim2 = filterShift !== "all" && filterShift !== sh; const dragging = dragSh && dragSh.empId === emp.id && dragSh.day === d; const isAbs = sh === "U" || sh === "K"; const grabbable = editMode && isShift(sh); return (<td key={d} style={{ padding: "1px", textAlign: "center", background: bg, opacity: dim2 ? .2 : 1 }}><div draggable={grabbable} onDragStart={grabbable ? e => { setDragSh({ empId: emp.id, day: d, key: sh }); e.dataTransfer.effectAllowed = "move"; } : undefined} onDragEnd={() => setDragSh(null)} onDragOver={editMode ? e => e.preventDefault() : undefined} onDrop={editMode ? e => { e.preventDefault(); if (!dragSh) return; if (isAbs) { flash("er", "Tag mit Urlaub/Krank lässt sich nicht überschreiben"); setDragSh(null); return; } moveShift(dragSh.empId, dragSh.day, emp.id, d); } : undefined} onClick={editMode ? () => paintCell(emp.id, d) : ((isShift(sh) || isAbs) ? () => setSdSel({ empId: emp.id, day: d }) : undefined)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", background: shBg(sh), color: shC(sh), borderRadius: 5, width: 20, height: 18, fontWeight: 700, fontSize: 9, cursor: editMode ? (grabbable ? "grab" : "pointer") : ((isShift(sh) || isAbs) ? "pointer" : "default"), opacity: dragging ? .35 : 1, outline: arbzgSet.has(emp.id + ":" + d) ? `2px solid ${T.erT}` : (editMode && dragSh && !dragging && !isAbs ? `1px dashed ${T.acc}` : "none") }}>{sh === "-" ? "" : sh}</div></td>); })}<td style={{ padding: "4px 7px", textAlign: "center", fontWeight: 700, background: bg, fontSize: 11, color: T.tx }}>{tot}</td></tr>
                 ); })}
                 {filteredNonPlanEmps.length > 0 && <tr><td colSpan={days + 2} style={{ padding: "5px 11px", background: T.bg3, borderTop: `1px solid ${T.bord}`, fontSize: 9, fontWeight: 700, color: T.tx2, letterSpacing: .5, position: "sticky", left: 0 }}>PLATZHALTER · nicht im Auto-Plan</td></tr>}
                 {filteredNonPlanEmps.map((emp, ri) => { const row = (editMode ? draft : curSc)?.[emp.id] || Array(days).fill("-"); const tot = row.filter(s => isShift(s)).length; const bg = T.bg3; return (

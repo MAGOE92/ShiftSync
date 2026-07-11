@@ -325,6 +325,24 @@ export default function App() {
     missing > 0 ? flash("w", `Plan ${lbl} erstellt${modeTxt} · ${missing} Schicht(en) unbesetzt – Stundenkontingente ausgeschöpft (rote Felder prüfen)`) : flash("ok", `Plan ${lbl} ${mode === "fill" ? "aufgefüllt" : "automatisch erstellt"}${modeTxt} · ${planEmps.length} MA · Stundenkonten eingehalten`);
   };
 
+  // Einzelne Schichten direkt im veröffentlichten Plan setzen/entfernen
+  // (KI-Vorschläge & Schicht-Detail-Panel). list: [{ empId, day (0-basiert), key }]
+  const assignShifts = async list => {
+    const base = scheds[planMo]; if (!base || !list.length) return;
+    const { days } = pm(planMo);
+    const sc = {}; Object.keys(base).forEach(id => { sc[id] = [...base[id]]; });
+    const notif = [];
+    list.forEach(({ empId, day, key }) => {
+      if (!sc[empId]) sc[empId] = Array(days).fill("-");
+      sc[empId][day] = key;
+      if (key !== "-") notif.push({ uid: empId, type: "plan", text: `Neue Schicht: ${key} am ${day + 1}.${Number(planMo.slice(5, 7))}.` });
+    });
+    await saveData({ ...data, scheds: { ...scheds, [planMo]: sc }, notifs: [...allNotifs, ...buildNotifs(notif)] });
+    flash("ok", list.length === 1
+      ? (list[0].key === "-" ? "Schicht entfernt ✓" : "Schicht zugewiesen ✓ · Mitarbeiter benachrichtigt")
+      : `${list.length} Schichten besetzt ✓ · Team benachrichtigt`);
+  };
+
   const paintKeys = () => [...shiftDefs.map(s => s.key), "U", "K", "-"];
   const paintCell = (id, d) => setDraft(p => { const row = p[id]; if (!row) return p; return { ...p, [id]: row.map((s, i) => i === d ? (paint || shiftDefs[0]?.key || "-") : s) }; });
   const moveShift = (fromId, fromDay, toId, toDay) => { if (fromId === toId && fromDay === toDay) { setDragSh(null); return; } setDraft(p => { const key = p[fromId]?.[fromDay]; if (!key || !shiftDefs.some(s => s.key === key)) return p; const np = {}; Object.keys(p).forEach(id => np[id] = [...p[id]]); np[fromId][fromDay] = "-"; if (np[toId]) np[toId][toDay] = key; return np; }); setDragSh(null); };
@@ -561,7 +579,7 @@ export default function App() {
     flash, saveOrgs, updOrg, saveCfg, saveData, togDark, logout, doLogin, doSetup,
     refreshData: () => orgId && loadOrgData(orgId).then(d => { setData(d); flash("ok", "Aktualisiert ✓"); }),
     seedDemo, addEmp, saveEf, patchEmp, doRst, delEmp, toggleInPlan, switchToOrg, linkOrg, unlinkOrg,
-    absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft,
+    absMap, createEmptyPlan, generate, paintKeys, paintCell, moveShift, publishDraft, assignShifts,
     doClock, istHoursMonth, exportPayroll, offerShift, withdrawOffer, takeShift,
     handleReq, saveOrgEdits, addAbsence, regenGaps, copyPrevPattern, announce, setAccent, setTimeclock, saveShift, delShift, addHoliday, delHoliday,
     setPerm, printPlan, exportCSV, saveWishes, togWish, loadWishes, savePref, doChPin, submitRq, cancelRq, revokeVac,
