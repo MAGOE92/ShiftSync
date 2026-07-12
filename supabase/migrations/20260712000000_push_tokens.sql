@@ -3,8 +3,8 @@
 -- RLS gesperrt wie bei allen anderen Tabellen.
 create table if not exists push_tokens (
   token text primary key,
-  org_id uuid not null references orgs(id) on delete cascade,
-  emp_id uuid not null references employees(id) on delete cascade,
+  org_id text not null references orgs(id) on delete cascade,
+  emp_id text not null references employees(id) on delete cascade,
   platform text not null default 'android', -- 'ios' | 'android'
   updated_at timestamptz not null default now()
 );
