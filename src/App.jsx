@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import db from "./lib/storage.js";
+import { isNative, initNativeShell, initPush } from "./lib/native.js";
 import { orgCode } from "./lib/orgCode.js";
 import { arbzgCheck } from "./lib/arbzg.js";
 import { algo } from "./lib/algo.js";
@@ -78,8 +79,29 @@ export default function App() {
       *::-webkit-scrollbar{width:11px;height:11px;}
       *::-webkit-scrollbar-thumb{background:rgba(120,120,120,.32);border-radius:8px;border:3px solid transparent;background-clip:padding-box;}
       *::-webkit-scrollbar-thumb:hover{background:rgba(120,120,120,.5);background-clip:padding-box;}
+      ${isNative ? `
+      /* Native Apps: Inhalte nicht unter Notch/Home-Indicator schieben */
+      body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);
+           padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);}
+      html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;}
+      input,textarea{-webkit-user-select:auto;user-select:auto;}` : ""}
     `; document.head.appendChild(st);
   }, []);
+
+  // Native Shell (iOS/Android): StatusBar an Theme koppeln, Splash ausblenden
+  useEffect(() => { initNativeShell(dark); }, [dark]);
+
+  // Push-Benachrichtigungen: nach Login Geräte-Token holen und am Gateway
+  // registrieren. Antippen einer Push öffnet die Benachrichtigungsliste.
+  useEffect(() => {
+    if (!isNative || !me) return;
+    let cleanup;
+    initPush(
+      (token, platform) => db.registerPush?.(token, platform),
+      () => setShowNotifs(true),
+    ).then(c => { cleanup = c; });
+    return () => cleanup?.();
+  }, [me?.id]);
 
   // Setzt den React-State aus einer Login/Setup/Restore-Antwort des Adapters.
   const applySession = r => {

@@ -1,0 +1,26 @@
+{
+  "appId": "pro.shiftsync.app",
+  "appName": "ShiftSync",
+  "webDir": "dist",
+  "backgroundColor": "#f0f0ed",
+  "ios": {
+    "contentInset": "always",
+    "scheme": "ShiftSync"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "backgroundColor": "#f0f0ed",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "Keyboard": {
+      "resize": "body"
+    }
+  }
+}

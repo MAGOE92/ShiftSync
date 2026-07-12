@@ -98,6 +98,10 @@ const db = {
   unlinkOrg: async targetId => call("unlink_org", { targetId }),
   chpin: async (cur, nw) => call("chpin", { cur, nw }),
 
+  // Push-Token des Geräts am Server registrieren/entfernen (nur native Apps)
+  registerPush: async (pushToken, platform) => call("register_push", { pushToken, platform }),
+  unregisterPush: async pushToken => call("unregister_push", { pushToken }).catch(() => {}),
+
   logout: () => setToken(null),
 
   // Realtime entfällt im Gateway-Modell (RLS gesperrt → kein anon-Subscribe).

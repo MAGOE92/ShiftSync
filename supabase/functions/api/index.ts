@@ -9,7 +9,8 @@
 // PINs verlassen den Server nie; get() liefert Mitarbeiter ohne PIN.
 //
 // POST { action, ...payload }, Authorization: Bearer <session-token>
-// Actions: login, setup, me, get, set, chpin, link_org, unlink_org, switch_org
+// Actions: login, setup, me, get, set, chpin, link_org, unlink_org, switch_org,
+//          register_push, unregister_push
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -143,6 +144,83 @@ function orgCode(name: string): string {
   let code = "", x = h;
   for (let i = 0; i < 5; i++) { code += AB[x % AB.length]; x = Math.floor(x / AB.length); }
   return code;
+}
+
+// ─── Push-Versand (FCM HTTP v1 — bedient Android UND iOS via APNs) ────────
+// Benötigt Secret FCM_SERVICE_ACCOUNT = kompletter Service-Account-JSON
+// aus der Firebase-Konsole. Fehlt es, wird Push still übersprungen.
+
+let fcmCache: { token: string; exp: number } | null = null;
+
+async function fcmAccessToken(): Promise<{ token: string; projectId: string } | null> {
+  const raw = Deno.env.get("FCM_SERVICE_ACCOUNT");
+  if (!raw) return null;
+  const sa = JSON.parse(raw);
+  if (fcmCache && fcmCache.exp > Date.now() + 60_000) {
+    return { token: fcmCache.token, projectId: sa.project_id };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = b64url(JSON.stringify({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now, exp: now + 3600,
+  }));
+  const pem = String(sa.private_key).replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  const key = await crypto.subtle.importKey(
+    "pkcs8", fromB64(pem).buffer as ArrayBuffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${claims}`));
+  const jwt = `${header}.${claims}.${b64url(String.fromCharCode(...new Uint8Array(sig)))}`;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=${encodeURIComponent("urn:ietf:params:oauth:grant-type:jwt-bearer")}&assertion=${jwt}`,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.access_token) return null;
+  fcmCache = { token: data.access_token, exp: Date.now() + (Number(data.expires_in || 3600) - 60) * 1000 };
+  return { token: data.access_token, projectId: sa.project_id };
+}
+
+// Schickt jedem betroffenen Mitarbeiter eine Push pro neuer Benachrichtigung.
+// Best effort: Fehler werden geloggt, blockieren aber nie das Speichern.
+async function sendPushForNotifs(orgId: string, notifs: Any[]) {
+  try {
+    if (!notifs.length) return;
+    const auth = await fcmAccessToken();
+    if (!auth) return;
+    const empIds = [...new Set(notifs.map(n => n.emp_id).filter(Boolean))];
+    if (!empIds.length) return;
+    const { data: tokens } = await db.from("push_tokens")
+      .select("token, emp_id").eq("org_id", orgId).in("emp_id", empIds);
+    if (!tokens?.length) return;
+    const byEmp: Record<string, string[]> = {};
+    tokens.forEach((t: Any) => { (byEmp[t.emp_id] ||= []).push(t.token); });
+
+    const dead: string[] = [];
+    await Promise.all(notifs.flatMap(n => (byEmp[n.emp_id] || []).map(async token => {
+      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${auth.projectId}/messages:send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${auth.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            token,
+            notification: { title: "ShiftSync", body: String(n.text || "Neue Benachrichtigung") },
+            data: { type: String(n.type || "info") },
+            apns: { payload: { aps: { sound: "default", badge: 1 } } },
+            android: { priority: "high" },
+          },
+        }),
+      });
+      if (res.status === 404 || res.status === 400) dead.push(token); // UNREGISTERED/ungültig
+    })));
+    if (dead.length) await db.from("push_tokens").delete().in("token", dead);
+  } catch (e) {
+    console.error("push error:", e);
+  }
 }
 
 // ─── Mapping: DB-Row ↔ App-Format ────────────────────────────────────────
@@ -321,8 +399,20 @@ async function saveOrgData(orgId: string, value: Any, session?: Session | null) 
     created_at: n.at ? new Date(n.at).toISOString() : new Date().toISOString(),
   }));
   if (notifRows.length) {
+    // Vorher wissen, welche Benachrichtigungen NEU sind → nur die pushen
+    const { data: existingNotifs } = await db.from("notifications")
+      .select("id").eq("org_id", orgId).in("id", notifRows.map(n => n.id));
+    const known = new Set((existingNotifs || []).map((n: Any) => n.id));
+    const fresh = notifRows.filter(n => !known.has(n.id));
+
     const { error } = await db.from("notifications").upsert(notifRows, { onConflict: "id" });
     if (error) throw new ApiError("Speichern (Benachrichtigungen): " + error.message, 500);
+
+    // Push an die Geräte der Empfänger — läuft nach der Antwort weiter
+    const p = sendPushForNotifs(orgId, fresh);
+    // deno-lint-ignore no-explicit-any
+    const rt = (globalThis as any).EdgeRuntime;
+    if (rt?.waitUntil) rt.waitUntil(p); else await p;
   }
 
   // ── clock ──
@@ -762,6 +852,26 @@ async function actSwitchOrg(body: Any, session: Session) {
   return ok(resp);
 }
 
+// Geräte-Token einer nativen App speichern (ein Token wandert mit dem Login mit)
+async function actRegisterPush(body: Any, session: Session) {
+  if (session.sup || !session.oid || !session.eid) return ok({ ok: true });
+  const token = String(body.pushToken || "").trim();
+  const platform = body.platform === "ios" ? "ios" : "android";
+  if (!token) throw new ApiError("Push-Token fehlt", 400);
+  const { error } = await db.from("push_tokens").upsert({
+    token, org_id: session.oid, emp_id: session.eid, platform,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "token" });
+  if (error) throw new ApiError("Push-Registrierung fehlgeschlagen: " + error.message, 500);
+  return ok({ ok: true });
+}
+
+async function actUnregisterPush(body: Any, session: Session) {
+  const token = String(body.pushToken || "").trim();
+  if (token) await db.from("push_tokens").delete().eq("token", token).eq("emp_id", session.eid!);
+  return ok({ ok: true });
+}
+
 // ─── HTTP-Handler ────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -786,6 +896,8 @@ Deno.serve(async (req) => {
       case "link_org": return await actLinkOrg(body, requireAuth(session));
       case "unlink_org": return await actUnlinkOrg(body, requireAuth(session));
       case "switch_org": return await actSwitchOrg(body, requireAuth(session));
+      case "register_push": return await actRegisterPush(body, requireAuth(session));
+      case "unregister_push": return await actUnregisterPush(body, requireAuth(session));
       default: throw new ApiError(`Unbekannte Aktion: ${action}`, 400);
     }
   } catch (e) {
