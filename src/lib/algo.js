@@ -138,9 +138,13 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) 
           .map(e => {
             const target = monthlyTargetHours[e.id];
             const worked = workedHours[e.id];
-            // Auslastungs-Faktor reduziert (3 statt 5), damit Präferenz stärker dominiert
-            const utilization = target > 0 ? worked / target : 1;
-            return { ...e, score: utilization * 3 + prefScore(e, sh) + (Math.random() - .5) * .35 };
+            // Pacing statt reiner Gesamt-Auslastung: erwartete Stunden BIS zu diesem
+            // Tag (pro-rata über den Monat). Sonst verbrauchen Teilzeit-Kräfte am
+            // Monatsanfang ihr ganzes Budget und fallen den Rest des Monats weg.
+            // paced-utilization > 1 ⇒ diese Kraft ist ihrer Zeit voraus ⇒ zurückstellen.
+            const paced = target > 0 ? target * (d + 1) / days : 0;
+            const utilization = paced > 0 ? worked / paced : 1;
+            return { ...e, score: utilization * 4 + prefScore(e, sh) + (Math.random() - .5) * .35 };
           })
           .sort((a, b) => a.score - b.score);
         candidates.forEach(e => {

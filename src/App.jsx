@@ -366,7 +366,7 @@ export default function App() {
   };
 
   const paintKeys = () => [...shiftDefs.map(s => s.key), "U", "K", "-"];
-  const paintCell = (id, d) => setDraft(p => { const row = p[id]; if (!row) return p; return { ...p, [id]: row.map((s, i) => i === d ? (paint || shiftDefs[0]?.key || "-") : s) }; });
+  const paintCell = (id, d) => setDraft(p => { const len = p[id]?.length || Object.values(p)[0]?.length || 0; if (!len) return p; const row = p[id] || Array(len).fill("-"); return { ...p, [id]: row.map((s, i) => i === d ? (paint || shiftDefs[0]?.key || "-") : s) }; });
   const moveShift = (fromId, fromDay, toId, toDay) => { if (fromId === toId && fromDay === toDay) { setDragSh(null); return; } setDraft(p => { const key = p[fromId]?.[fromDay]; if (!key || !shiftDefs.some(s => s.key === key)) return p; const np = {}; Object.keys(p).forEach(id => np[id] = [...p[id]]); np[fromId][fromDay] = "-"; if (np[toId]) np[toId][toDay] = key; return np; }); setDragSh(null); };
   const publishDraft = async () => { const { lbl } = pm(planMo); const planEmps = emps.filter(e => e.inPlan !== false); const viol = draft ? arbzgCheck(draft, planEmps, shiftDefs) : []; const crit = viol.filter(v => v.sev === "er"); if (crit.length && !confirm(`Achtung: ${crit.length} kritische ArbZG-Verstöße (Ruhezeit/Schichtlänge).\n\n${crit.slice(0, 4).map(v => `• ${v.name}, ${v.day + 1}.: ${v.msg}`).join("\n")}${crit.length > 4 ? "\n…" : ""}\n\nTrotzdem veröffentlichen?`)) return; const nt = buildNotifs(planEmps.map(e => ({ uid: e.id, type: "plan", text: `Neuer Dienstplan für ${lbl} ist online` }))); await saveData({ ...data, scheds: { ...scheds, [planMo]: draft }, notifs: [...allNotifs, ...nt] }); setEditMode(false); setDraft(null); flash("ok", "Veröffentlicht ✓ · Team benachrichtigt"); };
 

@@ -44,6 +44,24 @@ describe("algo – Stundenkappung", () => {
   });
 });
 
+describe("algo – Teilzeit-Verteilung", () => {
+  it("verteilt 60%-Kraft über den ganzen Monat statt nur an den Anfang", () => {
+    // 4 MA: einer mit 60%, drei mit 100%. Genug Bedarf, dass die 60%-Kraft
+    // gebraucht wird, aber nicht ihr ganzes Budget am Monatsanfang landen darf.
+    const emps = [
+      { id: "teil", name: "Teilzeit", pref: "any", workPct: 60, inPlan: true },
+      ...Array.from({ length: 3 }, (_, i) => ({ id: `v${i}`, name: `Voll ${i}`, pref: "any", workPct: 100, inPlan: true })),
+    ];
+    const sc = algo(emps, {}, {}, 2026, 0, SHIFTS, 40);
+    const shiftDays = sc["teil"].map((s, i) => (s === "F" || s === "N") ? i : -1).filter(i => i >= 0);
+    expect(shiftDays.length).toBeGreaterThan(0);
+    // Mindestens eine Schicht in der zweiten Monatshälfte (Tag >= 15) —
+    // beweist, dass die Teilzeit-Kraft nicht nur am Monatsanfang klumpt.
+    const lastShift = Math.max(...shiftDays);
+    expect(lastShift).toBeGreaterThanOrEqual(15);
+  });
+});
+
 describe("algo – genehmigter Urlaub", () => {
   it("Urlaub-Tage bleiben unverändert", () => {
     const emps = makeEmps(4);
