@@ -533,7 +533,83 @@ export default function AdminView() {
           const dCovPct = (() => { if (!dSc) return 0; const req = ddays * shiftDefs.reduce((s, d) => s + d.required, 0); let filled = 0; for (let d = 0; d < ddays; d++) shiftDefs.forEach(s => { filled += Math.min(dCov[d]?.[s.key] || 0, s.required); }); return req ? Math.round(filled / req * 100) : 0; })();
           const dUtil = dSc && planEmps.length ? Math.round(planEmps.map(e => { const so = targetHours(e, ddays); return so > 0 ? calcHours(dSc[e.id] || []) / so : 1; }).reduce((a, b) => a + b, 0) / planEmps.length * 100) : 0;
           const dHours = dSc ? planEmps.reduce((s, e) => s + calcHours(dSc[e.id] || []), 0) : 0;
+          const dOpenSlots = dGapDays.reduce((s, g) => s + g.gs.reduce((s2, x) => s2 + Math.max(0, x.need - x.has), 0), 0);
+          const sickPending = reqs.filter(r => r.type === "sick" && r.status === "pending").length;
+          const pendingReqs = [...reqs].filter(r => r.status === "pending").sort((a, b) => b.at - a.at);
+          const tLd = { sick: "Krank", vac: "Urlaub", swap: "Tausch" };
+          const hh = today.getHours();
+          const greet = hh < 12 ? "Guten Morgen" : hh < 18 ? "Guten Tag" : "Guten Abend";
+          const dayFmt = `${DW[today.getDay()]}, ${today.getDate()}. ${MF[today.getMonth()]} ${today.getFullYear()}`;
           return <div>
+          {(canAuto || true) && <div style={{ marginBottom: 16 }}>
+            <h2 style={{ margin: "0 0 3px", fontSize: 21, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif" }}>{greet}, {me.name.split(" ")[0]}</h2>
+            <div style={{ fontSize: 12.5, color: T.tx2 }}>{dayFmt}</div>
+          </div>}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+            <div style={{ ...crd, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Besetzung {dlbl}</div>
+              <div style={{ fontSize: 27, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", color: T.acc, lineHeight: 1 }}>{dCovPct}%</div>
+              <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>{shiftDefs.length} von {shiftDefs.length} Bereichen</div>
+            </div>
+            <div style={{ ...crd, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Offene Schichten</div>
+              <div style={{ fontSize: 27, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", color: T.wT, lineHeight: 1 }}>{dOpenSlots}</div>
+              <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>warten auf Besetzung</div>
+            </div>
+            <div style={{ ...crd, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Offene Anträge</div>
+              <div style={{ fontSize: 27, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", color: T.puT, lineHeight: 1 }}>{pendCount}</div>
+              <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>zur Genehmigung</div>
+            </div>
+            <div style={{ ...crd, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Krankmeldungen</div>
+              <div style={{ fontSize: 27, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", color: T.erT, lineHeight: 1 }}>{sickPending}</div>
+              <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>{sickPending ? "Vertretung gesucht" : "keine offenen Fälle"}</div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 12, marginBottom: 16, alignItems: "start" }}>
+            <div style={crd}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 24, height: 24, borderRadius: 7, background: T.acc, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="sparkle" s={13} style={{ color: "#fff" }} /></div>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: 1 }}>KI-Empfehlungen</h3>
+                <button style={{ background: "none", border: "none", cursor: "pointer", color: T.acc, fontSize: 11.5, fontWeight: 700 }} onClick={() => { setPlanMo(cm); setATab("sched"); }}>Zum Dienstplan →</button>
+              </div>
+              {planMo !== cm
+                ? <p style={{ margin: "10px 0 2px", fontSize: 12, color: T.tx2 }}>Öffne den Dienstplan für {dlbl}, um KI-Vorschläge für den aktuellen Monat zu sehen.</p>
+                : !aiSuggestions.length
+                  ? <p style={{ margin: "10px 0 2px", fontSize: 12, color: T.tx2 }}>Aktuell keine offenen Schichten, die ein Vorschlag füllen könnte.</p>
+                  : <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                      {aiSuggestions.slice(0, 4).map((s, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", background: T.bg2, borderRadius: 11, flexWrap: "wrap" }}>
+                          <div style={{ minWidth: 100 }}>
+                            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.tx2 }}>{s.dow} {s.d + 1}. · {s.label} ({s.key})</div>
+                            {s.emp && <div style={{ fontSize: 12, fontWeight: 700, marginTop: 2 }}>{s.emp.name}</div>}
+                          </div>
+                          {s.emp
+                            ? <button style={{ ...btn("p", true), marginLeft: "auto" }} onClick={() => assignShifts([{ empId: s.emp.id, day: s.d, key: s.key }])}>Übernehmen</button>
+                            : <span style={{ marginLeft: "auto", fontSize: 11, color: T.tx2, fontStyle: "italic" }}>kein Kandidat</span>}
+                        </div>
+                      ))}
+                    </div>}
+            </div>
+            <div style={crd}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: 1 }}>Offene Anträge</h3>
+                <button style={{ background: "none", border: "none", cursor: "pointer", color: T.acc, fontSize: 11.5, fontWeight: 700 }} onClick={() => setATab("reqs")}>Alle anzeigen →</button>
+              </div>
+              {!pendingReqs.length && <p style={{ margin: 0, fontSize: 12, color: T.tx2 }}>Keine offenen Anträge.</p>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {pendingReqs.slice(0, 3).map(r => { const emp = emps.find(e => e.id === r.uid); return (
+                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: T.acc, background: T.acc + "14", borderRadius: 6, padding: "3px 7px", flexShrink: 0 }}>{tLd[r.type] || r.type}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp?.name || "?"}</div>
+                    </div>
+                  </div>
+                ); })}
+              </div>
+            </div>
+          </div>
           {orgStatus !== "active" && <div style={{ ...crd, marginBottom: 14, background: orgStatus === "trial" ? T.bl : T.w, borderColor: (orgStatus === "trial" ? T.blT : T.wT) + "40" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap" }}>
               <Icon n={orgStatus === "trial" ? "clock" : "alert"} s={20} style={{ color: orgStatus === "trial" ? T.blT : T.wT }} />
