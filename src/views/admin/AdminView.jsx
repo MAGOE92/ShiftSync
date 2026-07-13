@@ -39,6 +39,7 @@ export default function AdminView() {
   const [hrEf, setHrEf] = useState({});
   const [absForm, setAbsForm] = useState({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" });
   const [staffSearch, setStaffSearch] = useState("");
+  const [hoursMo, setHoursMo] = useState(null); // Monat des Stundenkontos (null = aktueller)
   const [absCalMo, setAbsCalMo] = useState(null); // Monat des Abwesenheitskalenders (null = aktueller)
   const [annText, setAnnText] = useState("");
   const [aiOpen, setAiOpen] = useState(false);    // KI-Vorschläge-Panel (Planer)
@@ -112,6 +113,7 @@ export default function AdminView() {
     ["staff", "Mitarbeiter", "users"],
     ...(hasModule("reqs") ? [["reqs", `Anträge${pendCount ? " (" + pendCount + ")" : ""}`, "inbox"]] : []),
     ...(hasModule("reqs") ? [["swap", `Schichttausch${swapCount ? " (" + swapCount + ")" : ""}`, "repeat"]] : []),
+    ...(hasModule("sched") ? [["hours", "Stundenkonto", "clock"]] : []),
     ...((isOwner || can("manageOrg") || can("manageShifts")) ? [["settings", "Einstellungen", "settings"]] : []),
   ];
   // Wird ein Modul deaktiviert, während dessen Tab offen ist → zurück zur Übersicht
@@ -786,11 +788,110 @@ export default function AdminView() {
                 <input style={{ ...inp, paddingLeft: 30 }} placeholder="Mitarbeiter suchen…" value={staffSearch} onChange={e => setStaffSearch(e.target.value)} />
               </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {emps.filter(e => `${e.name} ${e.lid}`.toLowerCase().includes(staffSearch.trim().toLowerCase())).map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{hasModule("hr") && <button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>}{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { const parts = (emp.name || "").trim().split(/\s+/); const last = parts.length > 1 ? parts.pop() : ""; const first = parts.join(" "); setEditE(emp); setEf({ first, last, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
+            <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ borderBottom: `1px solid ${T.bord}` }}>
+                <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Name</th>
+                <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Rolle</th>
+                <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Vertrag</th>
+                <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Status</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Aktionen</th>
+              </tr></thead>
+              <tbody>
+              {emps.filter(e => `${e.name} ${e.lid}`.toLowerCase().includes(staffSearch.trim().toLowerCase())).map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; const pct = emp.workPct || 100; const vertrag = pct >= 90 ? "Vollzeit" : pct <= 25 ? "Minijob" : "Teilzeit"; return (
+                <tr key={emp.id} style={{ borderBottom: `1px solid ${T.bord}` }}>
+                  <td style={{ padding: "9px 8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Avatar emp={emp} size={32} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2, marginLeft: 5 }}>(du)</span>}</div>
+                        <div style={{ fontSize: 11, color: T.tx2 }}>{emp.lid}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: "9px 8px" }}><span style={{ fontSize: 11, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 9px", fontWeight: 700, whiteSpace: "nowrap" }}>{role.l}</span></td>
+                  <td style={{ padding: "9px 8px", color: T.tx2 }}>{vertrag} <span style={{ color: T.tx2, opacity: .7 }}>· {pct}%</span></td>
+                  <td style={{ padding: "9px 8px" }}><span style={{ fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "2px 9px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2, whiteSpace: "nowrap" }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></td>
+                  <td style={{ padding: "9px 8px" }}>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {hasModule("hr") && <button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>}
+                      {can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { const parts = (emp.name || "").trim().split(/\s+/); const last = parts.length > 1 ? parts.pop() : ""; const first = parts.join(" "); setEditE(emp); setEf({ first, last, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}
+                    </div>
+                  </td>
+                </tr>
+              ); })}
+              </tbody>
+            </table>
             </div>
           </div>
         </div>}
+
+        {aTab === "hours" && (() => {
+          const hMo = hoursMo || cm;
+          const { days: hdays, lbl: hlbl } = pm(hMo);
+          const hSc = scheds[hMo] || null;
+          const rows = planEmps.map(e => {
+            const ist = hSc ? calcHours(hSc[e.id] || []) : 0;
+            const soll = targetHours(e, hdays);
+            const pct = soll > 0 ? Math.round(ist / soll * 100) : 0;
+            return { e, ist, soll, pct };
+          });
+          const sollTotal = rows.reduce((s, r) => s + r.soll, 0);
+          const istTotal = rows.reduce((s, r) => s + r.ist, 0);
+          const openTotal = Math.max(0, sollTotal - istTotal);
+          return <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+              <div style={{ marginLeft: "auto" }}><MonthNav value={hMo} onChange={setHoursMo} /></div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+              <div style={{ ...crd, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Soll-Stunden {hlbl}</div>
+                <div style={{ fontSize: 25, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1 }}>{fmtH(sollTotal)}</div>
+                <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>{planEmps.length} Mitarbeiter × Ø {fmtH(weekStdHours)}/Woche</div>
+              </div>
+              <div style={{ ...crd, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Ist-Stunden bisher</div>
+                <div style={{ fontSize: 25, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1, color: T.acc }}>{fmtH(istTotal)}</div>
+                <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>{sollTotal ? Math.round(istTotal / sollTotal * 100) : 0}% der Monatsstunden</div>
+              </div>
+              <div style={{ ...crd, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11.5, color: T.tx2, marginBottom: 8 }}>Offene Stunden</div>
+                <div style={{ fontSize: 25, fontWeight: 800, fontFamily: "'Schibsted Grotesk',sans-serif", lineHeight: 1, color: T.wT }}>{fmtH(openTotal)}</div>
+                <div style={{ fontSize: 10.5, color: T.tx2, marginTop: 5 }}>noch zu planen bis Monatsende</div>
+              </div>
+            </div>
+            <div style={crd}>
+              {!rows.length && <p style={{ margin: 0, fontSize: 13, color: T.tx2, textAlign: "center", padding: "20px 0" }}>Keine Mitarbeiter im Dienstplan.</p>}
+              {rows.length > 0 && <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead><tr style={{ borderBottom: `1px solid ${T.bord}` }}>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Mitarbeiter</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Soll</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Ist</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Differenz</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10.5, color: T.tx2, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase" }}>Auslastung</th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(({ e, ist, soll, pct }) => { const delta = ist - soll; const col = pct === 0 ? T.tx2 : pct < 80 ? T.erT : pct > 110 ? T.wT : T.okT; return (
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${T.bord}` }}>
+                        <td style={{ padding: "9px 8px" }}><div style={{ display: "flex", alignItems: "center", gap: 9 }}><Avatar emp={e} size={28} /><span style={{ fontWeight: 700 }}>{e.name}</span></div></td>
+                        <td style={{ padding: "9px 8px", color: T.tx2 }}>{fmtH(soll)}</td>
+                        <td style={{ padding: "9px 8px", fontWeight: 700 }}>{fmtH(ist)}</td>
+                        <td style={{ padding: "9px 8px", fontWeight: 700, color: delta < 0 ? T.erT : delta > 0 ? T.wT : T.okT }}>{delta >= 0 ? "+" : "−"}{fmtH(Math.abs(delta))}</td>
+                        <td style={{ padding: "9px 8px", minWidth: 140 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ flex: 1, height: 6, background: T.bg3, borderRadius: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: col, borderRadius: 4 }} /></div>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, color: col, minWidth: 34, textAlign: "right" }}>{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ); })}
+                  </tbody>
+                </table>
+              </div>}
+            </div>
+          </div>;
+        })()}
 
         {(aTab === "reqs" || aTab === "swap") && <div>
           <div style={{ ...crd, marginBottom: 12 }}>
