@@ -107,6 +107,8 @@ export default function AdminView() {
 
   // Navigation — nur freigeschaltete Module erscheinen
   const swapCount = reqs.filter(r => r.type === "swap" && r.status === "pending").length;
+  // emps enthält evtl. nicht den eigenen Account (z.B. Inhaber) — auf me zurueckfallen
+  const findEmp = id => emps.find(e => e.id === id) || (id === me.id ? me : null);
   const navItems = [
     ["dash", "Dashboard", "chart"],
     ...(hasModule("sched") ? [["sched", "Dienstplan", "calendar"]] : []),
@@ -601,7 +603,7 @@ export default function AdminView() {
               </div>
               {!pendingReqs.length && <p style={{ margin: 0, fontSize: 12, color: T.tx2 }}>Keine offenen Anträge.</p>}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pendingReqs.slice(0, 3).map(r => { const emp = emps.find(e => e.id === r.uid); return (
+                {pendingReqs.slice(0, 3).map(r => { const emp = findEmp(r.uid); return (
                   <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 9 }}>
                     <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: T.acc, background: T.acc + "14", borderRadius: 6, padding: "3px 7px", flexShrink: 0 }}>{tLd[r.type] || r.type}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -950,23 +952,74 @@ export default function AdminView() {
           <div style={crd}>
             <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>{aTab === "swap" ? "Schichttausch" : reqFilter === "pending" ? "Offene Anfragen" : reqFilter === "ok" ? "Genehmigt" : reqFilter === "no" ? "Abgelehnt" : "Archiv"}</h3>
             {!filteredReqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "24px 0", margin: 0, fontSize: 13 }}>Keine Einträge.</p>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {[...filteredReqs].reverse().map(r => { const emp = emps.find(e => e.id === r.uid); const tL = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }; const sL = { pending: [T.w, T.wT, "clock", "Offen"], ok: [T.ok, T.okT, "check", "Genehmigt"], no: [T.er, T.erT, "x", "Abgelehnt"], cancelled: [T.bg3, T.tx2, "x", "Zurückgezogen"] }; const [bg, col, ic, sl] = sL[r.status] || sL.pending; const fmtD = ds => { if (!ds) return ""; const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; }; const sorted = r.dates ? [...r.dates].sort() : []; const canDec = (r.type === "vac" && can("approveVac")) || (r.type === "sick" && can("approveSick")) || (r.type === "swap" && can("approveSwap")); let whenStr = ""; if (r.type === "sick") whenStr = r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} bis ${fmtD(r.toDate)} (${r.dates?.length || ""} Tage)` : fmtD(r.fromDate || r.date); else if (r.type === "vac") whenStr = sorted.length ? `${sorted.length} Tage${sorted.length > 1 ? `: ${fmtD(sorted[0])} bis ${fmtD(sorted[sorted.length - 1])}` : `: ${fmtD(sorted[0])}`}` : ""; else if (r.type === "swap") whenStr = `${fmtD(r.fromDate || r.date)} tauschen mit ${emps.find(e => e.id === r.toId)?.name || "?"} am ${fmtD(r.toDate)}`; return (
-                <div key={r.id} style={{ padding: "12px 14px", background: T.bg2, borderRadius: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name || "?"}</span>
-                    <span style={{ fontSize: 11, color: T.tx2, background: T.bg3, borderRadius: 20, padding: "2px 8px" }}>{tL[r.type]}</span>
-                    {r.by === "admin" && <span style={{ fontSize: 10, color: T.tx2, border: `1px solid ${T.bord}`, borderRadius: 20, padding: "1px 7px" }}>von Verwaltung eingetragen</span>}
+            {aTab === "swap" ? <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[...filteredReqs].reverse().map(r => {
+                const from = findEmp(r.uid), to = findEmp(r.toId);
+                const shiftOn = (empId, dateStr) => { if (!empId || !dateStr) return null; const mo = dateStr.slice(0, 7); const day = Number(dateStr.slice(8, 10)); const key = scheds[mo]?.[empId]?.[day - 1]; return key && key !== "-" ? shiftDefs.find(s => s.key === key) : null; };
+                const fromShift = shiftOn(r.uid, r.date || r.fromDate);
+                const toShift = shiftOn(r.toId, r.toDate);
+                const fmtD = ds => { if (!ds) return ""; const d = new Date(ds + "T12:00:00"); return `${DW[d.getDay()]} ${d.getDate()}. ${MF[d.getMonth()]}`; };
+                const canDec = can("approveSwap");
+                const sL = { pending: [T.w, T.wT, "Offen"], ok: [T.ok, T.okT, "Genehmigt"], no: [T.er, T.erT, "Abgelehnt"] };
+                const [bg, col, sl] = sL[r.status] || sL.pending;
+                return (
+                  <div key={r.id} style={{ padding: "14px 16px", background: T.bg2, borderRadius: 14, border: `1px solid ${T.bord}` }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                      <div style={{ display: "flex" }}><Avatar emp={from} size={30} /><div style={{ marginLeft: -8 }}><Avatar emp={to} size={30} /></div></div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13.5 }}>{from?.name || "?"} → {to?.name || "?"}</div>
+                        <div style={{ fontSize: 11, color: T.tx2 }}>{ROLES[from?.role || "staff"].l}{to ? " · " + ROLES[to.role || "staff"].l : ""}</div>
+                      </div>
+                      <span style={{ display: "inline-flex", alignItems: "center", background: bg, color: col, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700 }}>{sl}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1, padding: "10px 12px", borderRadius: 10, background: fromShift ? shBg(fromShift.key) : T.bg }}>
+                        <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase", color: T.tx2, marginBottom: 3 }}>{from?.name || "?"}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: fromShift ? shC(fromShift.key) : T.tx }}>{fromShift ? `${fromShift.label} ${fromShift.start}–${fromShift.end}` : "unbekannt"}</div>
+                        <div style={{ fontSize: 10.5, color: T.tx2 }}>{fmtD(r.date || r.fromDate)}</div>
+                      </div>
+                      <Icon n="repeat" s={16} style={{ color: T.tx2, flexShrink: 0 }} />
+                      <div style={{ flex: 1, padding: "10px 12px", borderRadius: 10, background: toShift ? shBg(toShift.key) : T.bg }}>
+                        <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase", color: T.tx2, marginBottom: 3 }}>{to?.name || "?"}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: toShift ? shC(toShift.key) : T.tx }}>{toShift ? `${toShift.label} ${toShift.start}–${toShift.end}` : "unbekannt"}</div>
+                        <div style={{ fontSize: 10.5, color: T.tx2 }}>{fmtD(r.toDate)}</div>
+                      </div>
+                    </div>
+                    {r.status === "pending" && canDec && <div style={{ display: "flex", gap: 8, marginTop: 12 }}><button style={{ ...btn("s"), flex: 1, justifyContent: "center" }} onClick={() => handleReq(r.id, "no", "")}>Ablehnen</button><button style={{ ...btn("p"), flex: 1, justifyContent: "center" }} onClick={() => { setEditReq({ req: r }); setDecNote(""); }}>Tausch genehmigen</button></div>}
+                    {r.status === "pending" && !canDec && <div style={{ fontSize: 11, color: T.tx2, fontStyle: "italic", marginTop: 8 }}>Keine Berechtigung zum Entscheiden.</div>}
+                  </div>
+                );
+              })}
+            </div> : <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {[...filteredReqs].reverse().map(r => { const emp = findEmp(r.uid); const tL = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }; const tBadge = { sick: ["Krank", T.er, T.erT], vac: ["Urlaub", T.bl, T.blT], swap: ["Tausch", T.w, T.wT] }; const sL = { pending: [T.w, T.wT, "clock", "Offen"], ok: [T.ok, T.okT, "check", "Genehmigt"], no: [T.er, T.erT, "x", "Abgelehnt"], cancelled: [T.bg3, T.tx2, "x", "Zurückgezogen"] }; const [bg, col, ic, sl] = sL[r.status] || sL.pending; const [bLabel, bBg, bCol] = tBadge[r.type] || [tL[r.type], T.bg3, T.tx2]; const fmtD = ds => { if (!ds) return ""; const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; }; const sorted = r.dates ? [...r.dates].sort() : []; const canDec = (r.type === "vac" && can("approveVac")) || (r.type === "sick" && can("approveSick")) || (r.type === "swap" && can("approveSwap")); let whenStr = ""; if (r.type === "sick") whenStr = r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} bis ${fmtD(r.toDate)} (${r.dates?.length || ""} Tage)` : fmtD(r.fromDate || r.date); else if (r.type === "vac") whenStr = sorted.length ? `${sorted.length} Tage${sorted.length > 1 ? `: ${fmtD(sorted[0])} bis ${fmtD(sorted[sorted.length - 1])}` : `: ${fmtD(sorted[0])}`}` : ""; else if (r.type === "swap") whenStr = `${fmtD(r.fromDate || r.date)} tauschen mit ${findEmp(r.toId)?.name || "?"} am ${fmtD(r.toDate)}`;
+                const infoStr = r.type === "swap" ? `Tausch mit ${findEmp(r.toId)?.name || "?"}` : r.type === "vac" && emp?.vacDays != null ? `Urlaubsanspruch: ${emp.vacDays} Tage` : r.type === "sick" ? "Krankmeldung" : "";
+                return (
+                <div key={r.id} style={{ padding: "14px 16px", background: T.bg2, borderRadius: 14, border: `1px solid ${T.bord}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: .5, textTransform: "uppercase", background: bBg, color: bCol, borderRadius: 6, padding: "4px 9px" }}>{bLabel}</span>
+                    <Avatar emp={emp} size={30} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name || "?"}</div>
+                      <div style={{ fontSize: 11, color: T.tx2 }}>{ROLES[emp?.role || "staff"].l}{r.by === "admin" ? " · von Verwaltung eingetragen" : ""}</div>
+                    </div>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: bg, color: col, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, marginLeft: "auto" }}><Icon n={ic} s={11} />{sl}</span>
                   </div>
-                  {whenStr && <div style={{ fontSize: 12, color: T.tx, fontWeight: 500, marginBottom: 4 }}>{whenStr}</div>}
-                  {r.note && <div style={{ fontSize: 11, color: T.tx2, marginBottom: 6, fontStyle: "italic" }}>"{r.note}"</div>}
-                  {r.decisionNote && <div style={{ fontSize: 11, padding: "5px 9px", background: T.bg, borderRadius: 8, marginBottom: 6, color: T.tx2 }}>Antwort: {r.decisionNote}</div>}
-                  {r.status === "pending" && canDec && <div style={{ display: "flex", gap: 7, marginTop: 8 }}><button style={{ ...btn("ok", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => { setEditReq({ req: r }); setDecNote(""); }}><Icon n="check" s={13} />Genehmigen</button><button style={{ ...btn("er", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => handleReq(r.id, "no", "")}><Icon n="x" s={13} />Ablehnen</button></div>}
-                  {r.status === "pending" && !canDec && <div style={{ fontSize: 11, color: T.tx2, fontStyle: "italic", marginTop: 4 }}>Keine Berechtigung zum Entscheiden.</div>}
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: "10px 12px", background: T.bg, borderRadius: 10, marginBottom: 11 }}>
+                    <div style={{ minWidth: 140 }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: .5, color: T.tx2, textTransform: "uppercase", marginBottom: 3 }}>Zeitraum</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600 }}>{whenStr || "—"}</div>
+                    </div>
+                    {(infoStr || r.note) && <div style={{ minWidth: 140, flex: 1 }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: .5, color: T.tx2, textTransform: "uppercase", marginBottom: 3 }}>Info</div>
+                      <div style={{ fontSize: 12.5, color: T.tx2 }}>{r.note ? `"${r.note}"` : infoStr}</div>
+                    </div>}
+                  </div>
+                  {r.decisionNote && <div style={{ fontSize: 11, padding: "5px 9px", background: T.bg, borderRadius: 8, marginBottom: 8, color: T.tx2 }}>Antwort: {r.decisionNote}</div>}
+                  {r.status === "pending" && canDec && <div style={{ display: "flex", gap: 8 }}><button style={{ ...btn("s"), flex: 1, justifyContent: "center" }} onClick={() => handleReq(r.id, "no", "")}>Ablehnen</button><button style={{ ...btn("p"), flex: 1, justifyContent: "center", background: T.acc }} onClick={() => { setEditReq({ req: r }); setDecNote(""); }}>Genehmigen</button></div>}
+                  {r.status === "pending" && !canDec && <div style={{ fontSize: 11, color: T.tx2, fontStyle: "italic" }}>Keine Berechtigung zum Entscheiden.</div>}
                 </div>
               ); })}
-            </div>
+            </div>}
           </div>
         </div>}
 
