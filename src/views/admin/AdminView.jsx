@@ -38,6 +38,7 @@ export default function AdminView() {
   const [hrTab, setHrTab] = useState("overview");
   const [hrEf, setHrEf] = useState({});
   const [absForm, setAbsForm] = useState({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" });
+  const [staffSearch, setStaffSearch] = useState("");
   const [absCalMo, setAbsCalMo] = useState(null); // Monat des Abwesenheitskalenders (null = aktueller)
   const [annText, setAnnText] = useState("");
   const [aiOpen, setAiOpen] = useState(false);    // KI-Vorschläge-Panel (Planer)
@@ -73,7 +74,8 @@ export default function AdminView() {
   const filteredNonPlanEmps = filterEmp === "all" ? nonPlanEmps : nonPlanEmps.filter(e => e.id === filterEmp);
   const pdate = new Date(planDate);
   const viewDays = planView === "day" ? [pdate] : planView === "week" ? (() => { const s = new Date(pdate); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return Array.from({ length: 7 }, (_, i) => { const d = new Date(s); d.setDate(s.getDate() + i); return d; }); })() : [];
-  const filteredReqs = reqFilter === "all" ? reqs : reqs.filter(r => r.status === reqFilter);
+  const reqsScope = aTab === "swap" ? reqs.filter(r => r.type === "swap") : reqs;
+  const filteredReqs = reqFilter === "all" ? reqsScope : reqsScope.filter(r => r.status === reqFilter);
 
   // ── KI-Vorschläge: offene Soll-Schichten + bester verfügbarer Kandidat ──
   // Geprüft: ArbZG (canWork), Stunden-Deckel (max 102 % Soll), Wochentag-Verfügbarkeit.
@@ -103,12 +105,14 @@ export default function AdminView() {
   const aiFillable = aiSuggestions.filter(s => s.emp);
 
   // Navigation — nur freigeschaltete Module erscheinen
+  const swapCount = reqs.filter(r => r.type === "swap" && r.status === "pending").length;
   const navItems = [
-    ["dash", "Übersicht", "chart"],
-    ["staff", "Team", "users"],
-    ...(hasModule("reqs") ? [["reqs", `Anfragen${pendCount ? " (" + pendCount + ")" : ""}`, "inbox"]] : []),
-    ...(hasModule("sched") ? [["sched", "Planer", "calendar"]] : []),
-    ...((isOwner || can("manageOrg") || can("manageShifts")) ? [["settings", "Betrieb", "settings"]] : []),
+    ["dash", "Dashboard", "chart"],
+    ...(hasModule("sched") ? [["sched", "Dienstplan", "calendar"]] : []),
+    ["staff", "Mitarbeiter", "users"],
+    ...(hasModule("reqs") ? [["reqs", `Anträge${pendCount ? " (" + pendCount + ")" : ""}`, "inbox"]] : []),
+    ...(hasModule("reqs") ? [["swap", `Schichttausch${swapCount ? " (" + swapCount + ")" : ""}`, "repeat"]] : []),
+    ...((isOwner || can("manageOrg") || can("manageShifts")) ? [["settings", "Einstellungen", "settings"]] : []),
   ];
   // Wird ein Modul deaktiviert, während dessen Tab offen ist → zurück zur Übersicht
   useEffect(() => { if (!navItems.some(([k]) => k === aTab)) setATab("dash"); }, [aTab, navItems.length]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -156,7 +160,10 @@ export default function AdminView() {
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{editE.name}</h3>
               <button style={{ ...btn("s", true), padding: "4px 9px" }} onClick={() => setEditE(null)}><Icon n="x" s={15} /></button>
             </div>
-            <label style={lbl}>Name</label><input style={inp} value={ef.name || ""} onChange={e => setEf(p => ({ ...p, name: e.target.value }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div><label style={lbl}>Vorname</label><input style={inp} value={ef.first || ""} onChange={e => setEf(p => ({ ...p, first: e.target.value }))} /></div>
+              <div><label style={lbl}>Nachname</label><input style={inp} value={ef.last || ""} onChange={e => setEf(p => ({ ...p, last: e.target.value }))} /></div>
+            </div>
             <label style={lbl}>Login-ID</label><input style={inp} value={ef.lid || ""} onChange={e => setEf(p => ({ ...p, lid: e.target.value }))} />
             <label style={lbl}>Schichtpräferenz</label>
             <select style={inp} value={ef.pref || "any"} onChange={e => setEf(p => ({ ...p, pref: e.target.value }))}>{PR.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}{shiftDefs.map(s => <option key={s.key} value={s.key}>Nur {s.label}</option>)}</select>
@@ -681,7 +688,8 @@ export default function AdminView() {
           {can("manageStaff") && <div style={{ ...crd, marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Mitarbeiter anlegen</h3>{emps.length <= 1 && <button style={btn("bl", true)} onClick={seedDemo}>Demo</button>}</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10 }}>
-              <div><label style={lbl}>Name</label><input style={inp} value={nef.name} onChange={e => setNef(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label style={lbl}>Vorname</label><input style={inp} value={nef.first} onChange={e => setNef(p => ({ ...p, first: e.target.value }))} /></div>
+              <div><label style={lbl}>Nachname</label><input style={inp} value={nef.last} onChange={e => setNef(p => ({ ...p, last: e.target.value }))} /></div>
               <div><label style={lbl}>Login-ID</label><input style={inp} value={nef.lid} onChange={e => setNef(p => ({ ...p, lid: e.target.value }))} /></div>
               <div><label style={lbl}>PIN (≥4)</label><input style={inp} value={nef.pin} onChange={e => setNef(p => ({ ...p, pin: e.target.value }))} /></div>
               <div><label style={lbl}>Rolle</label><select style={inp} value={nef.role} onChange={e => { const r = e.target.value; setNef(p => ({ ...p, role: r, inPlan: r === "staff" || r === "manager" })); }}><option value="staff">Mitarbeiter</option><option value="manager">Shopleiter</option>{isOwner && <option value="director">Geschäftsführer</option>}</select></div>
@@ -695,21 +703,27 @@ export default function AdminView() {
             <button style={{ ...btn("p"), marginTop: 14 }} onClick={addEmp}>Anlegen</button>
           </div>}
           <div style={crd}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700 }}>Team ({emps.length})</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Team ({emps.length})</h3>
+              <div style={{ position: "relative", minWidth: 200 }}>
+                <Icon n="search" s={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.tx2, pointerEvents: "none" }} />
+                <input style={{ ...inp, paddingLeft: 30 }} placeholder="Mitarbeiter suchen…" value={staffSearch} onChange={e => setStaffSearch(e.target.value)} />
+              </div>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {emps.map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{hasModule("hr") && <button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>}{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { setEditE(emp); setEf({ name: emp.name, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
+              {emps.filter(e => `${e.name} ${e.lid}`.toLowerCase().includes(staffSearch.trim().toLowerCase())).map(emp => { const role = ROLES[emp.role || "staff"]; const inP = emp.inPlan !== false; return (<div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", background: T.bg2, borderRadius: 12, flexWrap: "wrap" }}><Avatar emp={emp} size={38} /><div style={{ flex: 1, minWidth: 90 }}><div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{emp.name}{emp.id === me.id && <span style={{ fontSize: 9, color: T.tx2 }}>(du)</span>}<span style={{ fontSize: 9.5, background: role.col + "1f", color: role.col, borderRadius: 20, padding: "2px 8px", fontWeight: 700 }}>{role.l}</span><span style={{ fontSize: 10, color: T.tx2 }}>{emp.workPct || 100}%</span><span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, background: inP ? T.ok : T.bg3, color: inP ? T.okT : T.tx2 }}><Icon n="calendar" s={11} />{inP ? "im Plan" : "nicht im Plan"}</span></div><div style={{ fontSize: 12, color: T.tx2, marginTop: 1 }}>{emp.lid}</div></div><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{hasModule("hr") && <button style={{ ...btn("s", true), padding: "7px 9px" }} onClick={() => { setHrEmp(emp); setHrTab("overview"); setHrEf({}); }} title="Mitarbeiterakte"><Icon n="clipboard" s={14} /></button>}{can("manageStaff") && <><button style={{ ...btn(inP ? "bl" : "s", true), padding: "7px 9px" }} onClick={() => toggleInPlan(emp)} title={inP ? "Aus Dienstplan nehmen" : "In Dienstplan aufnehmen"}><Icon n="calendar" s={14} /></button><button style={btn("s", true)} onClick={() => { const parts = (emp.name || "").trim().split(/\s+/); const last = parts.length > 1 ? parts.pop() : ""; const first = parts.join(" "); setEditE(emp); setEf({ first, last, lid: emp.lid, pref: emp.pref, role: emp.role || "staff", workPct: emp.workPct || 100, inPlan: emp.inPlan !== false, avail: emp.avail || null, maxDaysPerWeek: emp.maxDaysPerWeek || null }); }}><Icon n="pencil" s={14} /></button>{can("resetPins") && <button style={btn("w", true)} onClick={() => setRstE(emp)}><Icon n="key" s={14} /></button>}{emp.role !== "owner" && <button style={btn("er", true)} onClick={() => delEmp(emp)}><Icon n="trash" s={14} /></button>}</>}</div></div>); })}
             </div>
           </div>
         </div>}
 
-        {aTab === "reqs" && <div>
+        {(aTab === "reqs" || aTab === "swap") && <div>
           <div style={{ ...crd, marginBottom: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              {[["pending", "clock", "Offen", reqs.filter(r => r.status === "pending").length], ["ok", "check", "Genehmigt", reqs.filter(r => r.status === "ok").length], ["no", "x", "Abgelehnt", reqs.filter(r => r.status === "no").length], ["all", "list", "Alle", null]].map(([k, ic, l, n]) => <button key={k} style={{ ...btn(reqFilter === k ? "p" : "s", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => setReqFilter(k)}><Icon n={ic} s={13} />{l}{n != null ? ` (${n})` : ""}</button>)}
+              {[["pending", "clock", "Offen", reqsScope.filter(r => r.status === "pending").length], ["ok", "check", "Genehmigt", reqsScope.filter(r => r.status === "ok").length], ["no", "x", "Abgelehnt", reqsScope.filter(r => r.status === "no").length], ["all", "list", "Alle", null]].map(([k, ic, l, n]) => <button key={k} style={{ ...btn(reqFilter === k ? "p" : "s", true), display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => setReqFilter(k)}><Icon n={ic} s={13} />{l}{n != null ? ` (${n})` : ""}</button>)}
               <button style={{ ...btn("s", true), marginLeft: "auto" }} onClick={refreshData} title="Neu laden"><Icon n="repeat" s={14} /></button>
             </div>
           </div>
-          {can("absEntry") && (org.absEntryMode ?? "both") !== "emp" && <div style={{ ...crd, marginBottom: 12 }}>
+          {aTab === "reqs" && can("absEntry") && (org.absEntryMode ?? "both") !== "emp" && <div style={{ ...crd, marginBottom: 12 }}>
             <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700 }}>Abwesenheit eintragen</h3>
             <p style={{ margin: "0 0 12px", fontSize: 11, color: T.tx2 }}>Urlaub oder Krankheit direkt eintragen — wird sofort genehmigt, erscheint im Dienstplan und in der Mitarbeiterakte. Der Mitarbeiter wird benachrichtigt.</p>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
@@ -722,7 +736,7 @@ export default function AdminView() {
             <input style={inp} value={absForm.note} placeholder="z. B. telefonisch krankgemeldet" onChange={e => setAbsForm(p => ({ ...p, note: e.target.value }))} />
             <button style={{ ...btn("p"), marginTop: 12 }} onClick={async () => { const ok = await addAbsence(absForm); if (ok) setAbsForm({ empId: "", type: "vac", fromDate: "", toDate: "", note: "" }); }}><Icon n="check" s={15} />Eintragen</button>
           </div>}
-          {(() => {
+          {aTab === "reqs" && (() => {
             // Abwesenheitskalender: wer fehlt wann (genehmigte Urlaube/Krankmeldungen)
             const calMo = absCalMo || cm;
             const { y: cy2, m0: cm2, days: calDays, lbl: calLbl } = pm(calMo);
@@ -757,7 +771,7 @@ export default function AdminView() {
             </div>;
           })()}
           <div style={crd}>
-            <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>{reqFilter === "pending" ? "Offene Anfragen" : reqFilter === "ok" ? "Genehmigt" : reqFilter === "no" ? "Abgelehnt" : "Archiv"}</h3>
+            <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>{aTab === "swap" ? "Schichttausch" : reqFilter === "pending" ? "Offene Anfragen" : reqFilter === "ok" ? "Genehmigt" : reqFilter === "no" ? "Abgelehnt" : "Archiv"}</h3>
             {!filteredReqs.length && <p style={{ color: T.tx2, textAlign: "center", padding: "24px 0", margin: 0, fontSize: 13 }}>Keine Einträge.</p>}
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
               {[...filteredReqs].reverse().map(r => { const emp = emps.find(e => e.id === r.uid); const tL = { sick: "Krankmeldung", vac: "Urlaubsantrag", swap: "Schichttausch" }; const sL = { pending: [T.w, T.wT, "clock", "Offen"], ok: [T.ok, T.okT, "check", "Genehmigt"], no: [T.er, T.erT, "x", "Abgelehnt"], cancelled: [T.bg3, T.tx2, "x", "Zurückgezogen"] }; const [bg, col, ic, sl] = sL[r.status] || sL.pending; const fmtD = ds => { if (!ds) return ""; const d = new Date(ds + "T12:00:00"); return `${d.getDate()}. ${MF[d.getMonth()]}`; }; const sorted = r.dates ? [...r.dates].sort() : []; const canDec = (r.type === "vac" && can("approveVac")) || (r.type === "sick" && can("approveSick")) || (r.type === "swap" && can("approveSwap")); let whenStr = ""; if (r.type === "sick") whenStr = r.fromDate && r.toDate && r.fromDate !== r.toDate ? `${fmtD(r.fromDate)} bis ${fmtD(r.toDate)} (${r.dates?.length || ""} Tage)` : fmtD(r.fromDate || r.date); else if (r.type === "vac") whenStr = sorted.length ? `${sorted.length} Tage${sorted.length > 1 ? `: ${fmtD(sorted[0])} bis ${fmtD(sorted[sorted.length - 1])}` : `: ${fmtD(sorted[0])}`}` : ""; else if (r.type === "swap") whenStr = `${fmtD(r.fromDate || r.date)} tauschen mit ${emps.find(e => e.id === r.toId)?.name || "?"} am ${fmtD(r.toDate)}`; return (

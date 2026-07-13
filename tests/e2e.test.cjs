@@ -61,16 +61,16 @@ const ok = m => console.log("✓", m);
   const wizPin = [...document.querySelectorAll('input[type="password"]')][0];
   setVal(wizPin, "1234");
   click(byText("14 Tage kostenlos starten")); await sleep(300);
-  if (!document.body.textContent.includes("Übersicht")) fail("Nach Setup nicht im Admin-Bereich");
+  if (!document.body.textContent.includes("Dashboard")) fail("Nach Setup nicht im Admin-Bereich");
   ok("Betrieb angelegt, als Inhaber eingeloggt");
   const orgsRaw = JSON.parse(mem["orgs"]); const code = orgsRaw[0].code;
   ok("Betriebs-ID: " + code);
 
   // ── 3) Mitarbeiter david.koch anlegen — PIN absichtlich mit Leerzeichen "5678 "
-  click(byText("Team")); await sleep(150);
-  const nameI = inputAfterLabel("Name"); const lidI = inputAfterLabel("Login-ID"); const pinI = inputAfterLabel("PIN (≥4)");
-  if (!nameI || !lidI || !pinI) fail("Team-Formular nicht gefunden");
-  setVal(nameI, "David Koch"); setVal(lidI, "David.Koch "); setVal(pinI, "5678 ");
+  click(byText("Mitarbeiter")); await sleep(150);
+  const firstI = inputAfterLabel("Vorname"); const lastI = inputAfterLabel("Nachname"); const lidI = inputAfterLabel("Login-ID"); const pinI = inputAfterLabel("PIN (≥4)");
+  if (!firstI || !lastI || !lidI || !pinI) fail("Team-Formular nicht gefunden");
+  setVal(firstI, "David"); setVal(lastI, "Koch"); setVal(lidI, "David.Koch "); setVal(pinI, "5678 ");
   click(byText("Anlegen")); await sleep(250);
   const orgData = JSON.parse(mem["org_" + orgsRaw[0].id]);
   const david = orgData.emps.find(e => e.name === "David Koch");
@@ -82,7 +82,7 @@ const ok = m => console.log("✓", m);
   // ── 3b) Dienstplan anlegen → Admin-Ansicht darf NICHT abstürzen.
   //   Regression-Guard: arbzgCheck (u.a.) muss im App-Context an AdminView durchgereicht sein.
   //   Sobald ein Plan existiert, läuft der ArbZG-Wächter live — fehlt er im ctx, weißer Bildschirm.
-  click(byText("Planer")); await sleep(150);
+  click(byText("Dienstplan")); await sleep(150);
   const emptyBtn = byText("Leer & selbst erstellen") || byText("selbst erstellen");
   if (!emptyBtn) fail("Planer: Button 'Leer & selbst erstellen' nicht gefunden");
   click(emptyBtn); await sleep(300);
@@ -90,7 +90,7 @@ const ok = m => console.log("✓", m);
   if (bodyTxt.length < 200 || !/Stundenkonto|Compliance|Stunden/i.test(bodyTxt)) {
     fail("Admin-Ansicht nach Planerstellung abgestürzt (arbzgCheck/ctx?): body=" + bodyTxt.slice(0, 200));
   }
-  if (!byText("Team")) fail("Nach Planerstellung ist die Admin-Navigation verschwunden (Crash)");
+  if (!byText("Mitarbeiter")) fail("Nach Planerstellung ist die Admin-Navigation verschwunden (Crash)");
   ok("Dienstplan angelegt · Admin-Ansicht rendert (ArbZG-Wächter live, kein Crash)");
 
   // ── 4) Abmelden
