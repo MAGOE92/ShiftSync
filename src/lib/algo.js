@@ -89,8 +89,8 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) 
       const imbalance = cnt - otherCnt; // positiv = schon zu viele dieser Art
       return -4 + imbalance * 0.9;
     }
-    // Keine Nacht: Nachtschicht stark bestrafen
-    if (e.pref === "noN" && sh === "N") return 12;
+    // Keine Nacht: Nachtschicht stark bestrafen, alle anderen Schichten neutral
+    if (e.pref === "noN") return sh === "N" ? 12 : 0;
     // Flexibel: neutral
     if (e.pref === "any") return 0;
     // Nicht-bevorzugte Schicht: hohe Strafe — Mitarbeiter mit anderer Präferenz
@@ -119,6 +119,12 @@ export function algo(emps, wm, absM, y, mo, shiftDefs, weekStdHours, opts = {}) 
             if (!canWork(sc, e.id, d, sh, shiftDefs)) return false;
             if (pass === 0 && ws[e.id].has(d)) return false;
             if (workedHours[e.id] + shHours > monthlyTargetHours[e.id] * capF + 0.01) return false;
+            // Pacing als harter Filter (nur Pass 0/1): niemand darf seiner
+            // pro-rata-Monatsquote mehr als ~1,5 Schichten voraus sein. Sonst
+            // verplant ein starker Präferenz-Bonus Teilzeit-Kräfte komplett an
+            // den Monatsanfang (Budget nach 2 Wochen leer → Rest-Monat frei).
+            // Pass 2 (Not) ignoriert das, damit keine Lücke offen bleibt.
+            if (pass < 2 && workedHours[e.id] + shHours > monthlyTargetHours[e.id] * ((d + 1) / days) + shHours * 1.5) return false;
             // Wochentag-Verfügbarkeit: avail[dow] = Array erlaubter Schicht-Keys, fehlt = alle erlaubt
             if (e.avail) {
               const dow = new Date(y, mo - 1, d + 1).getDay();

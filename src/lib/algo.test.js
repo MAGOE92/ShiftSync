@@ -62,6 +62,33 @@ describe("algo – Teilzeit-Verteilung", () => {
   });
 });
 
+describe("algo – Teilzeit mit Schichtpräferenz", () => {
+  it("60%-Kraft mit 'Nur Früh' bleibt über den Monat verteilt UND in ihrer Schicht", () => {
+    const emps = [
+      { id: "teil", name: "Teilzeit", pref: "F", workPct: 60, inPlan: true },
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `v${i}`, name: `Voll ${i}`, pref: "any", workPct: 100, inPlan: true })),
+    ];
+    const sc = algo(emps, {}, {}, 2026, 0, SHIFTS, 40);
+    const shiftDays = sc["teil"].map((s, i) => (s === "F" || s === "N") ? { d: i, s } : null).filter(Boolean);
+    expect(shiftDays.length).toBeGreaterThan(0);
+    // Präferenz respektiert: keine Nachtschichten
+    expect(shiftDays.every(x => x.s === "F")).toBe(true);
+    // Verteilung: mindestens eine Schicht in der zweiten Monatshälfte
+    expect(Math.max(...shiftDays.map(x => x.d))).toBeGreaterThanOrEqual(15);
+  });
+
+  it("'Keine Nacht' zählt für Tagschichten nicht als Fremd-Schicht (bekommt Schichten)", () => {
+    const emps = [
+      { id: "non", name: "KeineNacht", pref: "noN", workPct: 50, inPlan: true },
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `v${i}`, name: `Voll ${i}`, pref: "any", workPct: 100, inPlan: true })),
+    ];
+    const sc = algo(emps, {}, {}, 2026, 0, SHIFTS, 40);
+    const worked = sc["non"].filter(s => s === "F" || s === "N");
+    expect(worked.length).toBeGreaterThan(0);
+    expect(worked.every(s => s !== "N")).toBe(true);
+  });
+});
+
 describe("algo – genehmigter Urlaub", () => {
   it("Urlaub-Tage bleiben unverändert", () => {
     const emps = makeEmps(4);
