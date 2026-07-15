@@ -359,6 +359,12 @@ async function saveOrgData(orgId: string, value: Any, session?: Session | null) 
         vacCarry: e.vacCarry ?? null,
         startDate: e.startDate ?? null,
         hrNotes: e.hrNotes ?? null,
+        // Kontaktdaten (vom Mitarbeiter selbst pflegbar, Admin sieht sie in der Akte)
+        email: e.email ?? null,
+        phone: e.phone ?? null,
+        address: e.address ?? null,
+        emergencyName: e.emergencyName ?? null,
+        emergencyPhone: e.emergencyPhone ?? null,
       },
     });
   }

@@ -431,6 +431,19 @@ export default function AdminView() {
               </>}
 
               {hrTab === "stamm" && <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.tx2, marginBottom: 8, letterSpacing: .3 }}>KONTAKTDATEN</div>
+                <p style={{ fontSize: 10, color: T.tx2, margin: "-4px 0 10px" }}>Der Mitarbeiter kann diese selbst im Profil pflegen — du kannst sie hier ebenfalls eintragen/korrigieren.</p>
+                <label style={lbl}>E-Mail</label>
+                <input style={inp} type="email" value={hrEf.email ?? (hrEmp.email || "")} onChange={e => setHrEf(p => ({ ...p, email: e.target.value }))} placeholder="name@beispiel.de" />
+                <label style={lbl}>Telefon</label>
+                <input style={inp} type="tel" value={hrEf.phone ?? (hrEmp.phone || "")} onChange={e => setHrEf(p => ({ ...p, phone: e.target.value }))} placeholder="0170 1234567" />
+                <label style={lbl}>Adresse</label>
+                <input style={inp} value={hrEf.address ?? (hrEmp.address || "")} onChange={e => setHrEf(p => ({ ...p, address: e.target.value }))} placeholder="Straße Nr., PLZ Ort" />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+                  <div><label style={lbl}>Notfallkontakt Name</label><input style={inp} value={hrEf.emergencyName ?? (hrEmp.emergencyName || "")} onChange={e => setHrEf(p => ({ ...p, emergencyName: e.target.value }))} /></div>
+                  <div><label style={lbl}>Notfallkontakt Telefon</label><input style={inp} type="tel" value={hrEf.emergencyPhone ?? (hrEmp.emergencyPhone || "")} onChange={e => setHrEf(p => ({ ...p, emergencyPhone: e.target.value }))} /></div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.tx2, margin: "16px 0 8px", letterSpacing: .3, borderTop: `1px solid ${T.bord}`, paddingTop: 14 }}>VERTRAG & URLAUB</div>
                 <label style={lbl}>Eintrittsdatum</label>
                 <input style={inp} type="date" value={hrEf.startDate ?? (hrEmp.startDate || "")} onChange={e => setHrEf(p => ({ ...p, startDate: e.target.value }))} />
                 <label style={lbl}>Jahresurlaubsanspruch (Tage)</label>

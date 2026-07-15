@@ -1,4 +1,4 @@
-import { Fragment, useEffect } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useApp } from "../../App.jsx";
 import { Icon } from "../../theme/icons.jsx";
 
@@ -23,6 +23,21 @@ export default function EmpView() {
 
   // Wunschfrei-Tage aus gespeicherten Daten laden, sobald der Tab geöffnet wird
   useEffect(() => { if (rqTab === "wish") loadWishes(wishMonth); }, [rqTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Eigene Kontaktdaten (vom Mitarbeiter selbst pflegbar)
+  const emptyContact = { email: "", phone: "", address: "", emergencyName: "", emergencyPhone: "" };
+  const [myData, setMyData] = useState(emptyContact);
+  const [savingData, setSavingData] = useState(false);
+  useEffect(() => { setMyData({ email: me.email || "", phone: me.phone || "", address: me.address || "", emergencyName: me.emergencyName || "", emergencyPhone: me.emergencyPhone || "" }); }, [me.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const contactDirty = ["email", "phone", "address", "emergencyName", "emergencyPhone"].some(k => (myData[k] || "") !== (me[k] || ""));
+  const saveMyData = async () => {
+    const email = myData.email.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { flash("er", "Bitte eine gültige E-Mail-Adresse eingeben"); return; }
+    setSavingData(true);
+    try { await patchEmp(me.id, { email: email || null, phone: myData.phone.trim() || null, address: myData.address.trim() || null, emergencyName: myData.emergencyName.trim() || null, emergencyPhone: myData.emergencyPhone.trim() || null }); flash("ok", "Kontaktdaten gespeichert ✓"); }
+    catch (e) { flash("er", "Speichern fehlgeschlagen — " + (e?.message || "Verbindungsfehler")); }
+    finally { setSavingData(false); }
+  };
 
   // Modus "Nur Verwaltung": Urlaub/Krank nicht wählbar — auf Schichttausch umstellen
   const adminAbsOnly = (org?.absEntryMode ?? "both") === "admin";
@@ -438,6 +453,24 @@ export default function EmpView() {
                 </div>
               </>;
             })()}
+          </div>
+          <div style={{ ...crd, marginBottom: 12 }}>
+            <h3 style={{ margin: "0 0 3px", fontSize: 14, fontWeight: 700 }}>Meine Daten</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 11, color: T.tx2 }}>Deine Kontaktdaten. Für den Betrieb in deiner Personalakte sichtbar.</p>
+            <label style={lbl}>E-Mail</label>
+            <input style={inp} type="email" placeholder="name@beispiel.de" value={myData.email} onChange={e => setMyData(p => ({ ...p, email: e.target.value }))} />
+            <label style={lbl}>Telefon</label>
+            <input style={inp} type="tel" placeholder="0170 1234567" value={myData.phone} onChange={e => setMyData(p => ({ ...p, phone: e.target.value }))} />
+            <label style={lbl}>Adresse</label>
+            <input style={inp} placeholder="Straße Nr., PLZ Ort" value={myData.address} onChange={e => setMyData(p => ({ ...p, address: e.target.value }))} />
+            <div style={{ marginTop: 6, paddingTop: 12, borderTop: `1px solid ${T.bord}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.tx2, marginBottom: 8 }}>Notfallkontakt</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+                <div><label style={lbl}>Name</label><input style={inp} placeholder="z. B. Partner/in" value={myData.emergencyName} onChange={e => setMyData(p => ({ ...p, emergencyName: e.target.value }))} /></div>
+                <div><label style={lbl}>Telefon</label><input style={inp} type="tel" placeholder="Nummer" value={myData.emergencyPhone} onChange={e => setMyData(p => ({ ...p, emergencyPhone: e.target.value }))} /></div>
+              </div>
+            </div>
+            <button style={{ ...btn(contactDirty ? "p" : "s"), marginTop: 14, width: "100%", justifyContent: "center", opacity: savingData ? 0.6 : 1 }} onClick={saveMyData} disabled={savingData || !contactDirty}>{savingData ? "Speichere…" : contactDirty ? "Änderungen speichern" : "Gespeichert"}</button>
           </div>
           <div style={crd}>
             <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>PIN ändern</h3>
