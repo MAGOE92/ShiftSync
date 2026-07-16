@@ -512,6 +512,52 @@ function checkOrgStatus(org: Any, role: string) {
   }
 }
 
+// ─── Brute-Force-Schutz ───────────────────────────────────────────────────
+// Ohne Bremse waere eine 4-stellige PIN in Minuten durchprobiert. Gezaehlt
+// wird je Identitaet (email bzw. code:lid): nach MAX_FAILS Fehlversuchen
+// innerhalb von WINDOW_MIN wird fuer LOCK_MIN gesperrt. Erfolgreicher Login
+// setzt den Zaehler zurueck. Fehler der Bremse duerfen den Login NIE
+// blockieren (fail-open) — sonst sperrt ein DB-Hickser alle aus.
+
+const MAX_FAILS = 5;
+const WINDOW_MIN = 15;
+const LOCK_MIN = 15;
+
+async function assertNotLocked(key: string) {
+  try {
+    const { data } = await db.from("login_attempts").select("locked_until").eq("key", key).maybeSingle();
+    if (!data?.locked_until) return;
+    const until = new Date(data.locked_until).getTime();
+    if (until > Date.now()) {
+      const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+      throw new ApiError(`Zu viele Fehlversuche. Bitte in ${mins} Minute${mins > 1 ? "n" : ""} erneut versuchen.`, 429);
+    }
+  } catch (e) {
+    if (e instanceof ApiError) throw e; // echte Sperre durchreichen
+    // DB-Problem: Login nicht blockieren
+  }
+}
+
+async function noteFail(key: string) {
+  try {
+    const { data } = await db.from("login_attempts").select("*").eq("key", key).maybeSingle();
+    const now = Date.now();
+    const windowStart = data?.first_fail ? new Date(data.first_fail).getTime() : now;
+    const stale = now - windowStart > WINDOW_MIN * 60000;
+    const fails = (stale || !data ? 0 : data.fails) + 1;
+    await db.from("login_attempts").upsert({
+      key,
+      fails,
+      first_fail: (stale || !data ? new Date(now) : new Date(windowStart)).toISOString(),
+      locked_until: fails >= MAX_FAILS ? new Date(now + LOCK_MIN * 60000).toISOString() : null,
+    }, { onConflict: "key" });
+  } catch { /* Zaehler-Fehler darf den Login-Ablauf nicht stoeren */ }
+}
+
+const clearFails = async (key: string) => {
+  try { await db.from("login_attempts").delete().eq("key", key); } catch { /* egal */ }
+};
+
 // ─── Actions ──────────────────────────────────────────────────────────────
 
 // Gemeinsamer Abschluss beider Login-Wege (Betriebs-ID oder E-Mail).
@@ -542,17 +588,21 @@ async function actLoginEmail(body: Any) {
   const orgId = body.orgId ? String(body.orgId) : null;
   if (!email || !pin) throw new ApiError("E-Mail und PIN eingeben", 400);
 
+  const lockKey = `email:${email}`;
+  await assertNotLocked(lockKey);
+
   const { data: rows, error } = await db.from("employees").select("*").eq("profile->>email", email);
   if (error) throw new ApiError("Datenbankfehler: " + error.message, 500);
   const cands = rows || [];
   // Bewusst identische Meldung bei unbekannter E-Mail und falscher PIN —
   // verrät nicht, ob eine Adresse im System existiert.
-  if (!cands.length) throw new ApiError("E-Mail oder PIN falsch", 401);
+  if (!cands.length) { await noteFail(lockKey); throw new ApiError("E-Mail oder PIN falsch", 401); }
 
   const matched: Any[] = [];
   for (const e of cands) if (await pinVerify(pin, e.pin_hash)) matched.push(e);
-  if (!matched.length) throw new ApiError("E-Mail oder PIN falsch", 401);
+  if (!matched.length) { await noteFail(lockKey); throw new ApiError("E-Mail oder PIN falsch", 401); }
 
+  await clearFails(lockKey);
   const pick = orgId ? matched.find((e: Any) => e.org_id === orgId) : (matched.length === 1 ? matched[0] : null);
   if (!pick) {
     const ids = matched.map((e: Any) => e.org_id);
@@ -581,6 +631,9 @@ async function actLogin(body: Any) {
     return ok({ super: true, token, orgs: await allOrgs() });
   }
 
+  const lockKey = `code:${code}:${lid}`;
+  await assertNotLocked(lockKey);
+
   const { data: orgRow, error } = await db.from("orgs").select("*").eq("code", code).maybeSingle();
   if (error) throw new ApiError("Datenbankfehler: " + error.message, 500);
   if (!orgRow) throw new ApiError("Betriebs-ID nicht gefunden", 404);
@@ -591,8 +644,10 @@ async function actLogin(body: Any) {
   if (!empRow) throw new ApiError(`Login-ID „${lid}" existiert in diesem Betrieb nicht`, 404);
 
   if (!(await pinVerify(pin, empRow.pin_hash))) {
+    await noteFail(lockKey);
     throw new ApiError(`PIN falsch für ${empRow.name}`, 401);
   }
+  await clearFails(lockKey);
   return await finishLogin(orgRow, empRow, pin);
 }
 
