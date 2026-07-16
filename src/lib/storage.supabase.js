@@ -75,6 +75,14 @@ const db = {
     return r;
   },
 
+  // E-Mail-Login. Liefert { chooseOrg: [...] } statt Token, wenn die Person
+  // in mehreren Betrieben eine Mitarbeiterkarte hat → orgId nachreichen.
+  loginEmail: async (email, pin, orgId) => {
+    const r = await call("login", { email, pin, orgId });
+    if (r.token) setToken(r.token);
+    return r;
+  },
+
   setup: async payload => {
     const r = await call("setup", payload);
     if (r.token) setToken(r.token);

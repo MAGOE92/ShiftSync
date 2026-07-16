@@ -72,6 +72,33 @@ const db = {
     return { org: o, orgs, emp: byId, data: d };
   },
 
+  // E-Mail-Login (Spiegel des Gateways): Person statt Betrieb als Einstieg.
+  // Mehrere Treffer ⇒ { chooseOrg } zurückgeben, Token erst nach der Wahl.
+  loginEmail: async (emailRaw, pinRaw, orgId) => {
+    const email = String(emailRaw || "").trim().toLowerCase();
+    const pin = String(pinRaw || "").trim();
+    if (!email || !pin) throw new Error("E-Mail und PIN eingeben");
+    const orgs = (await rawGet("orgs")) || [];
+    const matched = [];
+    for (const o of orgs) {
+      const d = safeData(await rawGet(`org_${o.id}`));
+      const e = d.emps.find(x => String(x.email || "").trim().toLowerCase() === email && String(x.pin).trim() === pin);
+      if (e) matched.push({ o, e, d });
+    }
+    // Gleiche Meldung für unbekannte E-Mail und falsche PIN — verrät nicht,
+    // ob eine Adresse im System existiert.
+    if (!matched.length) throw new Error("E-Mail oder PIN falsch");
+    const pick = orgId ? matched.find(m => m.o.id === orgId) : (matched.length === 1 ? matched[0] : null);
+    if (!pick) return { chooseOrg: matched.map(m => ({ id: m.o.id, code: m.o.code, name: m.o.name })) };
+    const { o, e, d } = pick;
+    const st = o.status || "active";
+    if (st === "suspended") throw new Error("Betrieb gesperrt – bitte Anbieter kontaktieren");
+    if (st === "archived" && e.role !== "owner") throw new Error("Dieser Betrieb ist offline gestellt");
+    if (st === "trial" && o.trialEnds && o.trialEnds < Date.now()) throw new Error("Testzeitraum abgelaufen");
+    session = { orgId: o.id, empId: e.id };
+    return { org: o, orgs, emp: e, data: d };
+  },
+
   setup: async payload => {
     const coName = String(payload.coName || "").trim();
     const coSub = String(payload.coSub || "").trim() || "Tankstelle · 24/7";
@@ -98,7 +125,8 @@ const db = {
       trialEnds: asSuper ? null : Date.now() + 14 * 864e5,
       accent: "#4f46e5",
     };
-    const owner = { id: rid(), name, lid, pin, pref: "any", role: "owner", workPct: 100, inPlan: false, notes: "" };
+    // email auch in die Inhaber-Karte → E-Mail-Login sofort möglich (wie im Gateway)
+    const owner = { id: rid(), name, lid, pin, pref: "any", role: "owner", workPct: 100, inPlan: false, notes: "", email: String(payload.email || "").trim().toLowerCase() || null };
     const orgList = [...orgs, newOrg];
     await rawSet("orgs", orgList);
     const data = { emps: [owner], wishes: {}, scheds: {}, reqs: [], notifs: [], clock: {}, market: [] };

@@ -132,6 +132,31 @@ const ok = m => console.log("✓", m);
   if (!document.body.textContent.includes("Stempeluhr")) fail("Heilung alter Leerzeichen-PINs funktioniert nicht");
   ok("Alt-Daten mit Leerzeichen-PIN: Login heilt automatisch");
 
-  console.log("\n✅ ALLE 9 TESTS BESTANDEN — Anlegen→Login→Planansicht verifiziert.");
+  // ── 9) E-Mail-Login (neuer Weg, ohne Betriebs-ID). Der Inhaber hat seine
+  //      Anmelde-E-Mail automatisch in der eigenen Karte → Login muss klappen.
+  click(document.querySelector('button[title="Abmelden"]')); await sleep(200);
+  const emailTab = byText("E-Mail");
+  if (!emailTab) fail("E-Mail-Umschalter auf der Login-Seite fehlt");
+  click(emailTab); await sleep(150);
+  const emailI = byPlaceholder("name@beispiel.de");
+  if (!emailI) fail("E-Mail-Feld erscheint nicht nach Umschalten");
+  setVal(emailI, " Test@Example.com ");   // Whitespace/Großschreibung muss geheilt werden
+  setVal(byPlaceholder("••••"), "1234");
+  click(byText("Anmelden")); await sleep(350);
+  if (!document.body.textContent.includes("Dashboard")) fail("E-Mail-Login fehlgeschlagen: " + document.body.textContent.slice(0, 300));
+  ok("E-Mail-Login erfolgreich — ohne Betriebs-ID (Whitespace/Case geheilt)");
+
+  // ── 10) E-Mail-Login mit falscher PIN darf NICHT anmelden (Meldungstext:
+  //       siehe Unit-Test storage.local.test.js — hier zählt das Verhalten)
+  click(document.querySelector('button[title="Abmelden"]')); await sleep(200);
+  click(byText("E-Mail")); await sleep(150);
+  setVal(byPlaceholder("name@beispiel.de"), "test@example.com");
+  setVal(byPlaceholder("••••"), "0000");
+  click(byText("Anmelden")); await sleep(300);
+  if (document.body.textContent.includes("Dashboard")) fail("Falsche PIN hat trotzdem angemeldet!");
+  if (!byPlaceholder("name@beispiel.de")) fail("Nach falscher PIN nicht mehr auf der Login-Seite");
+  ok("E-Mail-Login mit falscher PIN wird abgewiesen (kein Zugang)");
+
+  console.log("\n✅ ALLE 10 TESTS BESTANDEN — Anlegen→Login(ID+E-Mail)→Planansicht verifiziert.");
   process.exit(0);
 })().catch(e => { console.log("❌ EXCEPTION:", e.message); process.exit(1); });

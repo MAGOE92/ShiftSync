@@ -514,7 +514,60 @@ function checkOrgStatus(org: Any, role: string) {
 
 // ─── Actions ──────────────────────────────────────────────────────────────
 
+// Gemeinsamer Abschluss beider Login-Wege (Betriebs-ID oder E-Mail).
+async function finishLogin(orgRow: Any, empRow: Any, pin: string) {
+  // Klartext-Altbestand beim erfolgreichen Login auf PBKDF2 heben
+  if (!isHashed(empRow.pin_hash)) {
+    await db.from("employees").update({ pin_hash: await pinHash(pin) }).eq("id", empRow.id);
+  }
+  checkOrgStatus(orgRow, empRow.role);
+  const token = await signToken({ oid: orgRow.id, eid: empRow.id, role: empRow.role, sup: false });
+  return ok({
+    token,
+    org: mapOrg(orgRow),
+    orgs: await orgsForEmp(orgRow.id, empRow.linked_orgs),
+    emp: mapEmp(empRow),
+    data: await loadOrgData(orgRow.id),
+  });
+}
+
+// E-Mail-Login: die PERSON ist der Einstieg, nicht der Betrieb.
+// Die E-Mail liegt in employees.profile->>'email' (vom Mitarbeiter selbst
+// gepflegt). Dieselbe Person kann in mehreren Betrieben eine Mitarbeiterkarte
+// haben ("zwei Laura Bauer") → dann wird der Betrieb zur Auswahl angeboten,
+// erst nach der Wahl gibt es ein Token.
+async function actLoginEmail(body: Any) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const pin = String(body.pin || "").trim();
+  const orgId = body.orgId ? String(body.orgId) : null;
+  if (!email || !pin) throw new ApiError("E-Mail und PIN eingeben", 400);
+
+  const { data: rows, error } = await db.from("employees").select("*").eq("profile->>email", email);
+  if (error) throw new ApiError("Datenbankfehler: " + error.message, 500);
+  const cands = rows || [];
+  // Bewusst identische Meldung bei unbekannter E-Mail und falscher PIN —
+  // verrät nicht, ob eine Adresse im System existiert.
+  if (!cands.length) throw new ApiError("E-Mail oder PIN falsch", 401);
+
+  const matched: Any[] = [];
+  for (const e of cands) if (await pinVerify(pin, e.pin_hash)) matched.push(e);
+  if (!matched.length) throw new ApiError("E-Mail oder PIN falsch", 401);
+
+  const pick = orgId ? matched.find((e: Any) => e.org_id === orgId) : (matched.length === 1 ? matched[0] : null);
+  if (!pick) {
+    const ids = matched.map((e: Any) => e.org_id);
+    const { data: orgsRows } = await db.from("orgs").select("id, code, name").in("id", ids);
+    return ok({ chooseOrg: (orgsRows || []).map((o: Any) => ({ id: o.id, code: o.code, name: o.name })) });
+  }
+  const orgRow = await loadOrgRow(pick.org_id);
+  if (!orgRow) throw new ApiError("Betrieb existiert nicht mehr", 404);
+  return await finishLogin(orgRow, pick, pin);
+}
+
 async function actLogin(body: Any) {
+  // Neuer Weg: E-Mail statt Betriebs-ID (klassischer Weg bleibt unverändert)
+  if (body.email && !body.code) return await actLoginEmail(body);
+
   const code = String(body.code || "").trim().toUpperCase();
   const lid = String(body.lid || "").trim().toLowerCase();
   const pin = String(body.pin || "").trim();
@@ -540,21 +593,7 @@ async function actLogin(body: Any) {
   if (!(await pinVerify(pin, empRow.pin_hash))) {
     throw new ApiError(`PIN falsch für ${empRow.name}`, 401);
   }
-  // Klartext-Altbestand beim erfolgreichen Login auf PBKDF2 heben
-  if (!isHashed(empRow.pin_hash)) {
-    await db.from("employees").update({ pin_hash: await pinHash(pin) }).eq("id", empRow.id);
-  }
-
-  checkOrgStatus(orgRow, empRow.role);
-
-  const token = await signToken({ oid: orgRow.id, eid: empRow.id, role: empRow.role, sup: false });
-  return ok({
-    token,
-    org: mapOrg(orgRow),
-    orgs: await orgsForEmp(orgRow.id, empRow.linked_orgs),
-    emp: mapEmp(empRow),
-    data: await loadOrgData(orgRow.id),
-  });
+  return await finishLogin(orgRow, empRow, pin);
 }
 
 async function sendWelcomeMail(email: string, coName: string, code: string, lid: string) {
@@ -645,6 +684,9 @@ async function actSetup(body: Any, session: Session | null) {
     pin_hash: await pinHash(pin),
     role: "owner", work_pct: 100, pref: "any", in_plan: false,
     notes: "", linked_orgs: [],
+    // Anmelde-E-Mail auch in die eigene Karte → Inhaber kann sich sofort
+    // per E-Mail anmelden, ohne sie erst im Profil nachzutragen.
+    profile: { email: email || null },
   };
   const { error: e2 } = await db.from("employees").insert(empRow);
   if (e2) {

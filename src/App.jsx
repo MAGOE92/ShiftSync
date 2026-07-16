@@ -40,6 +40,8 @@ export default function App() {
   const [reqFilter, setReqFilter] = useState("pending");
 
   const [lOrg, setLOrg] = useState(""); const [lId, setLId] = useState(""); const [lPin, setLPin] = useState("");
+  // E-Mail-Login: Modus, Adresse, und Betriebs-Auswahl bei Mehrfach-Zugehörigkeit
+  const [lMode, setLMode] = useState("code"); const [lEmail, setLEmail] = useState(""); const [lChoose, setLChoose] = useState(null);
   const [wiz, setWiz] = useState({ coName: "", coSub: "Tankstelle · 24/7", weekStdHours: 40, name: "", lid: "", pin: "", plan: "free", email: "" });
   const [showOrgs, setShowOrgs] = useState(false);
   const [linkForm, setLinkForm] = useState({ code: "", lid: "", pin: "" });
@@ -262,6 +264,17 @@ export default function App() {
     try {
       const r = await db.login(lOrg, lId, lPin);
       setLOrg(""); setLId(""); setLPin("");
+      applySession(r);
+    } catch (e) { flash("er", e.message || "Anmeldung fehlgeschlagen"); }
+  };
+
+  // E-Mail-Login. Gehört die Person zu mehreren Betrieben, kommt statt einer
+  // Sitzung eine Auswahl zurück (chooseOrg) — dann erneut mit orgId aufrufen.
+  const doLoginEmail = async orgId => {
+    try {
+      const r = await db.loginEmail(lEmail, lPin, orgId);
+      if (r.chooseOrg) { setLChoose(r.chooseOrg); return; }
+      setLEmail(""); setLPin(""); setLChoose(null);
       applySession(r);
     } catch (e) { flash("er", e.message || "Anmeldung fehlgeschlagen"); }
   };
@@ -581,6 +594,7 @@ export default function App() {
     dark, orgs, orgId, data, view, me, isSuper, wasSuper, aTab, eTab, msg,
     planView, planDate, empPlanView, filterEmp, filterShift, reqFilter,
     lOrg, lId, lPin, wiz, showOrgs, linkForm, editE, ef, rstE, rstP,
+    lMode, setLMode, lEmail, setLEmail, lChoose, setLChoose, doLoginEmail,
     orgEd, editShift, showHoliday, holidayDate, holidayName, editReq, decNote,
     nef, dragSh, showNotifs, planMo, genLoad, genAsk, regenAsk, editMode, draft, paint,
     wishMonth, wsel, wishNote, rqForm, rqTab, pinCh,
