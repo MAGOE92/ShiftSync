@@ -651,18 +651,48 @@ async function actLogin(body: Any) {
   return await finishLogin(orgRow, empRow, pin);
 }
 
-async function sendWelcomeMail(email: string, coName: string, code: string, lid: string) {
+// ─── Mail-Versand (Resend) ────────────────────────────────────────────────
+// Absender ist eine EINSTELLUNG (Secret RESEND_FROM), kein fester Wert:
+//   - ohne eigene Domain: Resends Test-Absender (darf nur an die eigene
+//     Resend-Konto-Adresse senden) — Standard, funktioniert sofort
+//   - mit eigener, in Resend verifizierter Domain: RESEND_FROM setzen,
+//     z.B. "ShiftSync <noreply@meine-domain.de>" — ohne Neu-Deploy.
+// Fehler werden GELOGGT statt verschluckt: Resend antwortet bei nicht
+// verifizierter Absender-Domain mit 4xx — das ist KEINE Exception, ein
+// blosses .catch() haette es unsichtbar gemacht.
+
+const DEFAULT_FROM = "ShiftSync <onboarding@resend.dev>";
+
+async function sendMail(to: string, subject: string, html: string): Promise<boolean> {
   const key = Deno.env.get("RESEND_API_KEY");
-  if (!key || !email) return;
+  if (!key) { console.error("mail: RESEND_API_KEY nicht gesetzt — es wurde nichts versendet"); return false; }
+  if (!to) return false;
+  const from = Deno.env.get("RESEND_FROM") || DEFAULT_FROM;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to, subject, html }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error(`mail: Resend lehnte ab (HTTP ${res.status}) an ${to} von "${from}": ${detail}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("mail: Netzwerkfehler an " + to + ":", e);
+    return false;
+  }
+}
+
+async function sendWelcomeMail(email: string, coName: string, code: string, lid: string) {
+  if (!email) return;
   const appUrl = "https://shiftsync-pro-zeta.vercel.app";
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: "ShiftSync Pro <noreply@shiftsync.pro>",
-      to: email,
-      subject: `Dein Betrieb ist bereit — Betriebs-ID: ${code}`,
-      html: `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px">
+  await sendMail(
+    email,
+    `Dein Betrieb ist bereit — Betriebs-ID: ${code}`,
+    `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px">
         <h2 style="margin:0 0 8px">Willkommen bei ShiftSync Pro!</h2>
         <p style="color:#555">Dein Betrieb <strong>${coName}</strong> ist eingerichtet und einsatzbereit.</p>
         <div style="background:#f5f5f3;border-radius:10px;padding:20px;margin:24px 0">
@@ -676,8 +706,7 @@ async function sendWelcomeMail(email: string, coName: string, code: string, lid:
         <a href="${appUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">App öffnen</a>
         <p style="margin-top:24px;font-size:12px;color:#888">Dein 14-Tage-Test läuft ab jetzt. Bei Fragen antworte einfach auf diese E-Mail.</p>
       </div>`,
-    }),
-  }).catch(() => { /* E-Mail-Fehler blockieren nie den Setup */ });
+  );
 }
 
 async function actSetup(body: Any, session: Session | null) {
